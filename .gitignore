@@ -26,3 +26,11 @@
 *.exe
 *.out
 *.app
+
+# Specific folders and files
+/CMakeFiles
+/run-results
+cmake_install.cmake
+CMakeCache.txt
+Makefile
+nonlinear-poro-viscoelasticity
