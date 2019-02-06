@@ -1,9 +1,9 @@
 ##
-#  CMake script for the nonlinear poro-viscoelastic code gallery problem:
+#  CMake script for the complimb problem:
 ##
 
 # Set the name of the project and target:
-SET(TARGET "nonlinear-poro-viscoelasticity")
+SET(TARGET "complimb")
 
 # Declare all source files the target consists of. Here, this is only
 # the one step-X.cc file, but as you expand your project you may wish

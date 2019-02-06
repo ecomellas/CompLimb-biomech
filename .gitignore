@@ -28,6 +28,8 @@
 *.app
 
 # Specific folders and files
+.cproject
+.project
 /CMakeFiles
 /run-results
 cmake_install.cmake
