@@ -1,22 +1,18 @@
 /* ---------------------------------------------------------------------
  *
- * Copyright (C) 2010 - 2018 by the deal.II authors and
+ * Copyright (C) 2010 - 2019 by the deal.II authors and
  *                              Ester Comellas and Jean-Paul Pelteret
- * 
+ *
  * This file is part of the deal.II library.
  *
  * The deal.II library is free software; you can use it, redistribute
  * it, and/or modify it under the terms of the GNU Lesser General
- * Public License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * Public License v3.0  as published by the Free Software Foundation.
  * The full text of the license can be found in the file LICENSE at
  * the top level of the deal.II distribution.
  *
  * ---------------------------------------------------------------------
- */
-
-/*   Authors: Ester Comellas and Jean-Paul Pelteret,
- *           University of Erlangen-Nuremberg, 2018
+ *  Ester Comellas, Northeastern University, 2019
  */
 
 // We start by including all the necessary deal.II header files and some C++
@@ -95,7 +91,7 @@
 // We create a namespace for everything that relates to
 // the nonlinear poro-viscoelastic formulation,
 // and import all the deal.II function and class names into it:
-namespace NonLinearPoroViscoElasticity
+namespace CompLimb
 {
     using namespace dealii;
 
@@ -181,7 +177,10 @@ namespace NonLinearPoroViscoElasticity
                              Patterns::Selection("Ehlers_tube_step_load|Ehlers_tube_increase_load|Ehlers_cube_consolidation"
                                                  "|Franceschini_consolidation"
                                                  "|Budday_cube_tension_compression|Budday_cube_tension_compression_fully_fixed"
-                                                 "|Budday_cube_shear_fully_fixed"),
+                                                 "|Budday_cube_shear_fully_fixed"
+                                                 "|growing_muffin|trapped_turtle"
+                                                 "|brain_growth_confined_drained|brain_growth_confined_undrained"
+                                                 "|brain_growth_unconfined_drained|brain_growth_unconfined_undrained"),
                                 "Type of geometry used. "
                                 "For Ehlers validation examples see Ehlers and Eipper (1999). "
                                 "For Franceschini brain consolidation see Franceschini et al. (2006)"
@@ -261,6 +260,8 @@ namespace NonLinearPoroViscoElasticity
         double alpha2_mode_1;
         double alpha3_mode_1;
         double viscosity_mode_1;
+        std::string growth_type;
+        double growth_incr;
         std::string  fluid_type;
         double solid_vol_frac;
         double kappa_darcy;
@@ -354,6 +355,14 @@ namespace NonLinearPoroViscoElasticity
                             Patterns::Double(1e-10,1e100),
                             "Deformation-independent viscosity parameter 'eta_1' for first viscous mode in Ogden material [-].");
 
+          prm.declare_entry("growth", "none",
+                             Patterns::Selection("none|morphogen|pressure"),
+                             "Type of continuum growth");
+
+          prm.declare_entry("growth_incr", "1.0",
+                            Patterns::Double(0,100),
+                            "Morphogenetic growth increment per timestep");
+
           prm.declare_entry("seepage definition", "Ehlers",
                             Patterns::Selection("Markert|Ehlers"),
                             "Type of formulation used to define the seepage velocity in the problem. "
@@ -428,6 +437,8 @@ namespace NonLinearPoroViscoElasticity
           alpha2_mode_1 = prm.get_double("alpha2_1");
           alpha3_mode_1 = prm.get_double("alpha3_1");
           viscosity_mode_1 = prm.get_double("viscosity_1");
+          growth_type =  prm.get("growth");
+          growth_incr =  prm.get_double("growth_incr");
           //Fluid
           fluid_type = prm.get("seepage definition");
           solid_vol_frac = prm.get_double("initial solid volume fraction");
@@ -705,56 +716,188 @@ namespace NonLinearPoroViscoElasticity
         public:
           Material_Hyperelastic( const double solid_vol_frac,
                                  const double lambda,
+                                 const std::string growth_type,
+                                 const double growth_incr,
                                  const Time  &time,
                                  const enum SymmetricTensorEigenvectorMethod eigen_solver)
             :
             n_OS (solid_vol_frac),
             lambda (lambda),
+            growth_type(growth_type),
+            growth_incr(growth_incr),
             time(time),
-            det_F (1.0),
-            det_F_converged (1.0),
+            growth_stretch(1.0),
+            growth_stretch_converged(1.0),
+            det_Fve (1.0),
+            det_Fve_converged (1.0),
             eigen_solver (eigen_solver)
            {}
           ~Material_Hyperelastic()
           {}
 
+          // Determine "extra" Kirchhoff stress as sum of isochoric and volumetric Kirchhoff stresses
           SymmetricTensor<2, dim, NumberType> get_tau_E(const Tensor<2,dim, NumberType> &F) const
           {
-            return ( get_tau_E_base(F) + get_tau_E_ext_func(F) );
+            //Compute (visco-elastic) part of the def. gradient tensor.
+            const Tensor<2, dim> Fg = get_non_converged_growth_tensor();
+            const Tensor<2, dim> Fg_inv = invert(Fg);
+            const Tensor<2, dim, NumberType> Fve = F * Fg_inv;
+
+            return ( get_tau_E_base(Fve) + get_tau_E_ext_func(Fve) ); //should it be get_tau_E_ext_func(F)?!?!
           }
 
+          // Determine "extra" Cauchy stress as Kirchhoff stresses
           SymmetricTensor<2, dim, NumberType> get_Cauchy_E(const Tensor<2, dim, NumberType> &F) const
           {
               const NumberType det_F = determinant(F);
               Assert(det_F > 0, ExcInternalError());
-              return get_tau_E(F)*NumberType(1/det_F);
+
+              //Compute Fve
+              const Tensor<2, dim> Fg = get_non_converged_growth_tensor();
+              const Tensor<2, dim> Fg_inv = invert(Fg);
+              const Tensor<2, dim, NumberType> Fve = F * Fg_inv;
+
+              return get_tau_E(Fve)*NumberType(1/det_F); //Here the "whole" F is needed
           }
 
-          double get_converged_det_F() const
+          // Retrieve stored det_Fve
+          double get_converged_det_Fve() const
           {
-              return  det_F_converged;
+              return  det_Fve_converged;
+          }
+
+          double get_converged_growth_stretch() const
+          {
+              return growth_stretch_converged;
+          }
+
+          Tensor<2, dim> get_non_converged_growth_tensor() const
+          {
+              //Isotropic growth tensor
+              Tensor<2, dim> Fg(Physics::Elasticity::StandardTensors<dim>::I);
+              double theta = this->get_non_converged_growth_stretch();
+              Fg *= theta;
+              return Fg;
           }
 
           virtual void update_end_timestep()
           {
-              det_F_converged = det_F;
+              det_Fve_converged = det_Fve;
+              growth_stretch_converged = growth_stretch;
           }
 
           virtual void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F )
           {
-              det_F = Tensor<0,dim,double>(determinant(F));
+              const double det_F = Tensor<0,dim,double>(determinant(F));
+              Tensor<2, dim> Fg = get_non_converged_growth_tensor();
+              double det_Fg = determinant(Fg);
+              det_Fve = det_F/det_Fg;
+
+              //Growth
+              this->update_growth_stretch();
           }
 
           virtual double get_viscous_dissipation( ) const = 0;
 
-          const double n_OS;
-          const double lambda;
+          // Define constitutive model parameters
+          const double n_OS; //Initial porosity (solid volume fraction)
+          const double lambda; //1st Lamé parameter (for extension function related to compactation point)
+          const std::string growth_type;
+          const double growth_incr; //Morphogenetic growth increment per timestep
           const Time  &time;
-          double det_F;
-          double det_F_converged;
+
+          //Internal variables
+          double growth_stretch;           // Value of internal variable at this Newton step and timestep
+          double growth_stretch_converged; // Value of internal variable at the previous timestep
+          double det_Fve;           //Value in current iteration in current time step
+          double det_Fve_converged; //Value from previous time step
+
           const enum SymmetricTensorEigenvectorMethod eigen_solver;
 
         protected:
+          //Compute growth criterion
+          double get_growth_criterion() const
+          {
+              double growth_criterion;
+
+              if (growth_type == "none")
+                  growth_criterion=0.0;
+
+              else if (growth_type == "morphogen") //Morphogenetic growth: growth incr is const in every time step
+                  growth_criterion=growth_incr;
+
+              else
+                  throw std::runtime_error ("Growth type not implemented yet.");
+
+              return growth_criterion;
+
+          }
+
+          //Compute limiting function for growth
+          double get_growth_limiting_function(const double &growth_stretch) const  //Not limiting in morphogeneic growth
+          {
+              //Silence compiler warnings
+              (void)growth_stretch;
+              return (1.0);
+          }
+
+          //Compute derivative of growth stretch rate (=growth_limiting_function*growth_criterion) w.r.t. growth stretch
+          double get_derivative_growth_stretch_rate(const double &growth_stretch) const  //Not limiting in morphogeneic growth
+          {
+              //Silence compiler warnings
+              (void)growth_stretch;
+              return (0.0);
+          }
+
+          //Compute growth stretch
+          void update_growth_stretch()
+          {
+              double growth_criterion = this->get_growth_criterion();
+             growth_stretch = growth_stretch_converged;
+
+
+              if (growth_criterion != 0.0) //If there is growth, compute growth stretch
+              {
+                /*
+                  double growth_stretch_old = growth_stretch_converged;
+                  double growth_stretch_new = growth_stretch_converged;
+                  double dt = time.get_delta_t();
+
+                  double tolerance = 1.0e-6;
+                  double residual = tolerance*10.0;
+
+
+                  while(abs(residual) > tolerance)
+                  {
+                      double growth_limiting_function = this->get_growth_limiting_function(growth_stretch_new);
+                      double d_growth_stretch_rate_d_growth_stretch = this->get_derivative_growth_stretch_rate(growth_stretch_new);
+
+                      residual = growth_stretch_old -growth_stretch_new + growth_limiting_function*growth_criterion*dt;
+                      double K = 1.0 - dt*d_growth_stretch_rate_d_growth_stretch;
+
+                      growth_stretch_old = growth_stretch_new;
+                      growth_stretch_new = growth_stretch_old + residual/K;
+                  }
+                  growth_stretch = growth_stretch_new;
+                */
+
+                  //For morphogenic growth it's easier and faster to just write:
+                  growth_stretch = growth_stretch_converged + growth_criterion;
+              }
+          }
+
+          double get_non_converged_growth_stretch() const
+          {
+              return growth_stretch;
+          }
+
+          double get_non_converged_dgrowth_stretch_dt() const
+          {
+              return growth_stretch - growth_stretch_converged; //For morphogenetic growth,
+          }
+
+          // Extension function for "extra" Kirchhoff stress
+          // Ehlers & Eipper 1999, doi:10.1023/A:1006565509095 --  eqn. (33)
           SymmetricTensor<2, dim, NumberType> get_tau_E_ext_func(const Tensor<2,dim, NumberType> &F) const
           {
               const NumberType det_F = determinant(F);
@@ -764,6 +907,8 @@ namespace NonLinearPoroViscoElasticity
               return  NumberType(lambda * (1.0-n_OS)*(1.0-n_OS) * (det_F/(1.0-n_OS) - det_F/(det_F-n_OS))) * I;
           }
 
+          // Hyperelastic part of "extra" Kirchhoff stress (will be defined in each derived class)
+          // Must use compressible formulation
           virtual SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const = 0;
     };
 
@@ -774,11 +919,18 @@ namespace NonLinearPoroViscoElasticity
         public:
             NeoHooke( const double solid_vol_frac,
                       const double lambda,
+                      const std::string growth_type,
+                      const double growth_incr,
                       const Time  &time,
                       const enum SymmetricTensorEigenvectorMethod eigen_solver,
                       const double mu )
             :
-            Material_Hyperelastic< dim, NumberType > (solid_vol_frac,lambda,time, eigen_solver),
+            Material_Hyperelastic< dim, NumberType > (solid_vol_frac,
+                                                      lambda,
+                                                      growth_type,
+                                                      growth_incr,
+                                                      time,
+                                                      eigen_solver),
             mu(mu)
            {}
           ~NeoHooke()
@@ -792,7 +944,9 @@ namespace NonLinearPoroViscoElasticity
         protected:
           const double mu;
 
-          SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+          // Hyperelastic part of "extra" Kirchhoff stress (compressible formulation)
+          // Ehlers & Eipper 1999, doi:10.1023/A:1006565509095 -- eqn. (33)
+          SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &Fve) const
           {
              static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
 
@@ -801,20 +955,20 @@ namespace NonLinearPoroViscoElasticity
              if (use_standard_model)
              {
                // Standard Neo-Hooke
-               return ( mu * ( symmetrize(F * transpose(F)) - I ) );
+               return ( mu * ( symmetrize(Fve * transpose(Fve)) - I ) );
              }
              else
              {
                // Neo-Hooke in terms of principal stretches
-               const SymmetricTensor<2, dim, NumberType> B = symmetrize(F * transpose(F));
-               const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B
-                 = eigenvectors(B, this->eigen_solver);
+               const SymmetricTensor<2, dim, NumberType> Bve = symmetrize(Fve * transpose(Fve));
+               const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_Bve
+                 = eigenvectors(Bve, this->eigen_solver);
 
-               SymmetricTensor<2, dim, NumberType> B_ev;
+               SymmetricTensor<2, dim, NumberType> Bve_ev;
                for (unsigned int d=0; d<dim; ++d)
-                 B_ev += eigen_B[d].first*symmetrize(outer_product(eigen_B[d].second,eigen_B[d].second));
+                 Bve_ev += eigen_Bve[d].first*symmetrize(outer_product(eigen_Bve[d].second,eigen_Bve[d].second));
 
-                return mu * ( B_ev - I );
+                return mu * ( Bve_ev - I );
              }
           }
     };
@@ -826,6 +980,8 @@ namespace NonLinearPoroViscoElasticity
         public:
             Ogden( const double solid_vol_frac,
                    const double lambda,
+                   const std::string growth_type,
+                   const double growth_incr,
                    const Time  &time,
                    const enum SymmetricTensorEigenvectorMethod eigen_solver,
                    const double mu1,
@@ -835,7 +991,12 @@ namespace NonLinearPoroViscoElasticity
                    const double alpha2,
                    const double alpha3  )//Constructor
             :
-            Material_Hyperelastic< dim, NumberType > (solid_vol_frac,lambda,time,eigen_solver),
+            Material_Hyperelastic< dim, NumberType > (solid_vol_frac,
+                                                      lambda,
+                                                      growth_type,
+                                                      growth_incr,
+                                                      time,
+                                                      eigen_solver),
             mu({mu1,mu2,mu3}),
             alpha({alpha1,alpha2,alpha3})
            {}
@@ -851,12 +1012,17 @@ namespace NonLinearPoroViscoElasticity
           std::vector<double> mu;
           std::vector<double> alpha;
 
-          SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+          // Hyperelastic part of "extra" Kirchhoff stress (compressible formulation)
+          // Using same term as Ehlers & Eipper 1999, doi:10.1023/A:1006565509095 -- eqn. (33)
+          // to guarantee stress-free reference configuration [ 0.5 * sum(mu[i]*alpha[i]) * ln J ]
+          SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &Fve) const
           {
-            const SymmetricTensor<2, dim, NumberType> B = symmetrize(F * transpose(F));
+           //left Cauchy-Green deformation tensor
+            const SymmetricTensor<2, dim, NumberType> Bve = symmetrize(Fve * transpose(Fve));
 
-            const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B
-              = eigenvectors(B, this->eigen_solver);
+            //Compute Eigenvalues and Eigenvectors
+            const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_Bve
+              = eigenvectors(Bve, this->eigen_solver);
 
             SymmetricTensor<2, dim, NumberType>  tau;
             static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
@@ -865,8 +1031,8 @@ namespace NonLinearPoroViscoElasticity
             {
                 for (unsigned int A = 0; A < dim; ++A)
                 {
-                    SymmetricTensor<2, dim, NumberType>  tau_aux1 = symmetrize(outer_product(eigen_B[A].second,eigen_B[A].second));
-                    tau_aux1 *= mu[i]*std::pow(eigen_B[A].first, (alpha[i]/2.) );
+                    SymmetricTensor<2, dim, NumberType>  tau_aux1 = symmetrize(outer_product(eigen_Bve[A].second,eigen_Bve[A].second));
+                    tau_aux1 *= mu[i]*std::pow(eigen_Bve[A].first, (alpha[i]/2.) );
                     tau += tau_aux1;
                 }
                 SymmetricTensor<2, dim, NumberType>  tau_aux2 (I);
@@ -888,6 +1054,8 @@ namespace NonLinearPoroViscoElasticity
         public:
             visco_Ogden( const double solid_vol_frac,
                          const double lambda,
+                         const std::string growth_type,
+                         const double growth_incr,
                          const Time  &time,
                          const enum SymmetricTensorEigenvectorMethod eigen_solver,
                          const double mu1_infty,
@@ -904,7 +1072,12 @@ namespace NonLinearPoroViscoElasticity
                          const double alpha3_mode_1,
                          const double viscosity_mode_1)
             :
-            Material_Hyperelastic< dim, NumberType > (solid_vol_frac,lambda,time,eigen_solver),
+            Material_Hyperelastic< dim, NumberType > (solid_vol_frac,
+                                                      lambda,
+                                                      growth_type,
+                                                      growth_incr,
+                                                      time,
+                                                      eigen_solver),
             mu_infty({mu1_infty,mu2_infty,mu3_infty}),
             alpha_infty({alpha1_infty,alpha2_infty,alpha3_infty}),
             mu_mode_1({mu1_mode_1,mu2_mode_1,mu3_mode_1}),
@@ -920,9 +1093,25 @@ namespace NonLinearPoroViscoElasticity
           {
               Material_Hyperelastic < dim, NumberType >::update_internal_equilibrium(F);
 
-              this->Cinv_v_1 = this->Cinv_v_1_converged;
-              SymmetricTensor<2, dim, NumberType> B_e_1_tr = symmetrize(F * this->Cinv_v_1 * transpose(F));
+              // Finite viscoelasticity following Reese & Govindjee (1998)
+              // Algorithm for implicit exponential time integration
+              // as described in Budday et al. (2017) doi: 10.1016/j.actbio.2017.06.024
 
+              // Initialize viscous part of right Cauchy-Green deformation tensor
+              this->Cinv_v_1 = this->Cinv_v_1_converged;
+
+              //Just one Maxwell element, no for-loop needed
+              //Elastic predictor step (trial values)
+
+              //Compute Fve
+              const Tensor<2, dim> Fg = this->get_non_converged_growth_tensor();
+              const Tensor<2, dim> Fg_inv = invert(Fg);
+              const Tensor<2, dim, NumberType> Fve = F * Fg_inv;
+
+              //Trial elastic part of left Cauchy-Green deformation tensor
+              SymmetricTensor<2, dim, NumberType> B_e_1_tr = symmetrize(Fve * this->Cinv_v_1 * transpose(Fve));
+
+              //Compute Eigenvalues and Eigenvectors
               const std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim >
                 eigen_B_e_1_tr = eigenvectors(B_e_1_tr, this->eigen_solver);
 
@@ -930,10 +1119,14 @@ namespace NonLinearPoroViscoElasticity
               Tensor< 1, dim, NumberType > epsilon_e_1_tr;
               for (int a = 0; a < dim; ++a)
               {
+                  //Trial elastic principal stretches
                   lambdas_e_1_tr[a] = std::sqrt(eigen_B_e_1_tr[a].first);
+
+                  //Trial elastic logarithmic principal stretches
                   epsilon_e_1_tr[a] = std::log(lambdas_e_1_tr[a]);
               }
 
+             //Inelastic corrector step
              const double tolerance = 1e-8;
              double residual_check = tolerance*10.0;
              Tensor< 1, dim, NumberType > residual;
@@ -978,8 +1171,10 @@ namespace NonLinearPoroViscoElasticity
                       }
 
                   }
+                  //Update elastic logarithmic principal stretches
                   epsilon_e_1 -= invert(tangent)*residual;
 
+                  //Update residual check
                   residual_check = 0.0;
                   for (unsigned int a = 0; a < dim; ++a)
                   {
@@ -992,6 +1187,7 @@ namespace NonLinearPoroViscoElasticity
                                                 "viscoelastic exponential time integration algorithm.");
               }
 
+              //Compute converged stretches and left Cauchy-Green deformation tensor of mode 1
               NumberType aux_J_e_1 = 1.0;
               for (unsigned int a = 0; a < dim; ++a)
               {
@@ -1011,8 +1207,10 @@ namespace NonLinearPoroViscoElasticity
                   B_e_1 += B_e_1_aux;
               }
 
+              //Update inverse of the viscous right Cauchy-Green deformation tensor of mode 1
               Tensor<2, dim, NumberType>Cinv_v_1_AD = symmetrize(invert(F) * B_e_1 * invert(transpose(F)));
 
+              //Update tau_E_neq_1
               this->tau_neq_1 = 0;
               for (unsigned int a = 0; a < dim; ++a)
               {
@@ -1052,17 +1250,21 @@ namespace NonLinearPoroViscoElasticity
           SymmetricTensor<2, dim, double> Cinv_v_1_converged;
           SymmetricTensor<2, dim, NumberType> tau_neq_1;
 
-          SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &F) const
+          // Visco-hyperelastic part of "extra" Kirchhoff stress (compressible formulation)
+          SymmetricTensor<2, dim, NumberType> get_tau_E_base(const Tensor<2,dim, NumberType> &Fve) const
           {
-              return ( get_tau_E_neq() + get_tau_E_eq(F) );
+              return ( get_tau_E_neq() + get_tau_E_eq(Fve) );
           }
 
-          SymmetricTensor<2, dim, NumberType> get_tau_E_eq(const Tensor<2,dim, NumberType> &F) const
+          // Equilibrium (hyperelastic) part of "extra" Kirchhoff stress
+          SymmetricTensor<2, dim, NumberType> get_tau_E_eq(const Tensor<2,dim, NumberType> &Fve) const
           {
-            const SymmetricTensor<2, dim, NumberType> B = symmetrize(F * transpose(F));
+            //left Cauchy-Green deformation tensor
+            const SymmetricTensor<2, dim, NumberType> Bve = symmetrize(Fve * transpose(Fve));
 
-            std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_B;
-            eigen_B = eigenvectors(B, this->eigen_solver);
+            //Compute Eigenvalues and Eigenvectors
+            std::array< std::pair< NumberType, Tensor< 1, dim, NumberType > >, dim > eigen_Bve;
+            eigen_Bve = eigenvectors(Bve, this->eigen_solver);
 
             SymmetricTensor<2, dim, NumberType>  tau;
             static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
@@ -1071,8 +1273,8 @@ namespace NonLinearPoroViscoElasticity
             {
                 for (unsigned int A = 0; A < dim; ++A)
                 {
-                    SymmetricTensor<2, dim, NumberType>  tau_aux1 = symmetrize(outer_product(eigen_B[A].second,eigen_B[A].second));
-                    tau_aux1 *= mu_infty[i]*std::pow(eigen_B[A].first, (alpha_infty[i]/2.) );
+                    SymmetricTensor<2, dim, NumberType>  tau_aux1 = symmetrize(outer_product(eigen_Bve[A].second,eigen_Bve[A].second));
+                    tau_aux1 *= mu_infty[i]*std::pow(eigen_Bve[A].first, (alpha_infty[i]/2.) );
                     tau += tau_aux1;
                 }
                 SymmetricTensor<2, dim, NumberType>  tau_aux2 (I);
@@ -1087,7 +1289,8 @@ namespace NonLinearPoroViscoElasticity
               return tau_neq_1;
           }
 
-          NumberType get_beta_mode_1(std::vector< NumberType > &lambda, const int &A) const
+          //Compute beta term for the given (volume invariant) stretches
+          NumberType get_beta_mode_1(std::vector< NumberType > &lambda_ve, const int &A) const
           {
               NumberType beta = 0.0;
 
@@ -1096,10 +1299,10 @@ namespace NonLinearPoroViscoElasticity
 
                   NumberType aux = 0.0;
                   for (int p = 0; p < dim; ++p)
-                      aux += std::pow(lambda[p],alpha_mode_1[i]);
+                      aux += std::pow(lambda_ve[p],alpha_mode_1[i]);
 
                   aux *= -1.0/dim;
-                  aux += std::pow(lambda[A], alpha_mode_1[i]);
+                  aux += std::pow(lambda_ve[A], alpha_mode_1[i]);
                   aux *= mu_mode_1[i];
 
                   beta  += aux;
@@ -1107,7 +1310,8 @@ namespace NonLinearPoroViscoElasticity
               return beta;
           }
 
-          NumberType get_gamma_mode_1(std::vector< NumberType > &lambda, const int &A, const int &B) const
+          //Compute gamma term for the given (volume invariant) stretches
+          NumberType get_gamma_mode_1(std::vector< NumberType > &lambda_ve, const int &A, const int &B) const
           {
               NumberType gamma = 0.0;
 
@@ -1117,10 +1321,10 @@ namespace NonLinearPoroViscoElasticity
                   {
                       NumberType aux = 0.0;
                       for (int p = 0; p < dim; ++p)
-                          aux += std::pow(lambda[p],alpha_mode_1[i]);
+                          aux += std::pow(lambda_ve[p],alpha_mode_1[i]);
 
                       aux *= 1.0/(dim*dim);
-                      aux += 1.0/dim * std::pow(lambda[A], alpha_mode_1[i]);
+                      aux += 1.0/dim * std::pow(lambda_ve[A], alpha_mode_1[i]);
                       aux *= mu_mode_1[i]*alpha_mode_1[i];
 
                       gamma += aux;
@@ -1132,11 +1336,11 @@ namespace NonLinearPoroViscoElasticity
                   {
                       NumberType aux = 0.0;
                       for (int p = 0; p < dim; ++p)
-                          aux += std::pow(lambda[p],alpha_mode_1[i]);
+                          aux += std::pow(lambda_ve[p],alpha_mode_1[i]);
 
                       aux *= 1.0/(dim*dim);
-                      aux -= 1.0/dim * std::pow(lambda[A], alpha_mode_1[i]);
-                      aux -= 1.0/dim * std::pow(lambda[B], alpha_mode_1[i]);
+                      aux -= 1.0/dim * std::pow(lambda_ve[A], alpha_mode_1[i]);
+                      aux -= 1.0/dim * std::pow(lambda_ve[B], alpha_mode_1[i]);
                       aux *= mu_mode_1[i]*alpha_mode_1[i];
 
                       gamma += aux;
@@ -1310,12 +1514,16 @@ namespace NonLinearPoroViscoElasticity
                 if (parameters.mat_type == "Neo-Hooke")
                     solid_material.reset(new NeoHooke <dim, NumberType>(parameters.solid_vol_frac,
                                                                         parameters.lambda,
+                                                                        parameters.growth_type,
+                                                                        parameters.growth_incr,
                                                                         time,
                                                                         parameters.eigen_solver,
                                                                         parameters.mu));
                 else if (parameters.mat_type == "Ogden")
                     solid_material.reset(new Ogden <dim, NumberType>(parameters.solid_vol_frac,
                                                                      parameters.lambda,
+                                                                     parameters.growth_type,
+                                                                     parameters.growth_incr,
                                                                      time,
                                                                      parameters.eigen_solver,
                                                                      parameters.mu1_infty,
@@ -1327,6 +1535,8 @@ namespace NonLinearPoroViscoElasticity
                 else if (parameters.mat_type == "visco-Ogden")
                     solid_material.reset(new visco_Ogden <dim, NumberType>(parameters.solid_vol_frac,
                                                                            parameters.lambda,
+                                                                           parameters.growth_type,
+                                                                           parameters.growth_incr,
                                                                            time,
                                                                            parameters.eigen_solver,
                                                                            parameters.mu1_infty,
@@ -1358,19 +1568,31 @@ namespace NonLinearPoroViscoElasticity
                                                                                 parameters.gravity_value));
             }
 
-            SymmetricTensor<2, dim, NumberType> get_tau_E(const Tensor<2, dim, NumberType> &F) const
+            // We offer an interface to retrieve certain data (used in the material and
+            // global tangent matrix and residual assembly operations)
+            SymmetricTensor<2, dim, NumberType> get_tau_E(const Tensor<2, dim, NumberType> &Fve) const
             {
-                return solid_material->get_tau_E(F);
+                return solid_material->get_tau_E(Fve);
             }
 
-            SymmetricTensor<2, dim, NumberType>  get_Cauchy_E(const Tensor<2, dim, NumberType> &F) const
+            SymmetricTensor<2, dim, NumberType>  get_Cauchy_E(const Tensor<2, dim, NumberType> &Fve) const
             {
-                return solid_material->get_Cauchy_E(F);
+                return solid_material->get_Cauchy_E(Fve);
             }
 
-            double get_converged_det_F() const
+            double get_converged_det_Fve() const
             {
-              return  solid_material->get_converged_det_F();
+              return  solid_material->get_converged_det_Fve();
+            }
+
+            double get_converged_growth_stretch() const
+            {
+              return  solid_material->get_converged_growth_stretch();
+            }
+
+            Tensor<2, dim> get_non_converged_growth_tensor() const
+            {
+              return  solid_material->get_non_converged_growth_tensor();
             }
 
             void update_end_timestep()
@@ -1922,7 +2144,7 @@ namespace NonLinearPoroViscoElasticity
               solution_grads_face_p_fluid_total[f_q_point] = 0.0;
         }
     };
-  
+
     //Define the boundary conditions on the mesh
     template <int dim>
     void Solid<dim>::make_constraints(const int &it_nr_IN)
@@ -2530,6 +2752,13 @@ namespace NonLinearPoroViscoElasticity
               lqph_q_point_nc->update_internal_equilibrium(F_AD);
             }
 
+            //Growth
+            const Tensor<2, dim> Fg = lqph[q_point]->get_non_converged_growth_tensor();
+            const Tensor<2, dim> Fg_inv = invert(Fg); //inverse of growth tensor
+            const Tensor<2, dim, ADNumberType> Fve_AD = F_AD * Fg_inv;
+            const ADNumberType det_Fve_AD = determinant(Fve_AD);  //Determinant of (visco)elastic part of def. gradient tensor
+            Assert(det_Fve_AD > 0, ExcInternalError());
+
             //Get some info from constitutive model of solid
             static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
             const SymmetricTensor<2, dim, ADNumberType> tau_E = lqph[q_point]->get_tau_E(F_AD);
@@ -2537,8 +2766,8 @@ namespace NonLinearPoroViscoElasticity
             tau_fluid_vol *= -1.0 * p_fluid * det_F_AD;
 
             //Get some info from constitutive model of fluid
-            const ADNumberType det_F_aux =  lqph[q_point]->get_converged_det_F();
-            const double det_F_converged = Tensor<0,dim,double>(det_F_aux); //Needs to be double, not AD number
+            const ADNumberType det_Fve_aux =  lqph[q_point]->get_converged_det_Fve();
+            const double det_Fve_converged = Tensor<0,dim,double>(det_Fve_aux); //Needs to be double, not AD number
             const Tensor<1, dim, ADNumberType> overall_body_force = lqph[q_point]->get_overall_body_force(F_AD, parameters);
 
             // Define some aliases to make the assembly process easier to follow
@@ -2561,7 +2790,7 @@ namespace NonLinearPoroViscoElasticity
                 else if (i_group == p_fluid_block)
                   {
                     const Tensor<1, dim, ADNumberType> seepage_vel_current = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p);
-                    residual_ad[i] += Np[i] * (det_F_AD - det_F_converged) * JxW;
+                    residual_ad[i] += Np[i] * (det_Fve_AD - det_Fve_converged) * JxW;
                     residual_ad[i] -= time.get_delta_t() * grad_Np[i] * seepage_vel_current * JxW;
                   }
                 else
@@ -2635,8 +2864,8 @@ namespace NonLinearPoroViscoElasticity
               lqph[q_point]->update_end_timestep();
           }
     }
-  
-  
+
+
      //Solve the linearized equations
      template <int dim>
      void Solid<dim>::solve_linear_system( TrilinosWrappers::MPI::BlockVector &newton_update_OUT)
@@ -2810,6 +3039,8 @@ namespace NonLinearPoroViscoElasticity
             Vector<double >viscous_dissipation_elements (triangulation.n_active_cells());
             Vector<double >solid_vol_fraction_elements (triangulation.n_active_cells());
 
+            Vector<double> growth_stretch_elements (triangulation.n_active_cells());
+
             //Declare and initialize local unit vectors (to construct tensor basis)
             std::vector<Tensor<1,dim> > basis_vectors (dim, Tensor<1,dim>() );
             for (unsigned int i=0; i<dim; ++i)
@@ -2821,12 +3052,16 @@ namespace NonLinearPoroViscoElasticity
             if (parameters.mat_type == "Neo-Hooke")
                 NeoHooke<dim, ADNumberType> material( parameters.solid_vol_frac,
                                                       parameters.lambda,
+                                                      parameters.growth_type,
+                                                      parameters.growth_incr,
                                                       time,
                                                       parameters.eigen_solver,
                                                       parameters.mu );
             else if (parameters.mat_type == "Ogden")
                 Ogden<dim, ADNumberType> material( parameters.solid_vol_frac,
                                                    parameters.lambda,
+                                                   parameters.growth_type,
+                                                   parameters.growth_incr,
                                                    time,
                                                    parameters.eigen_solver,
                                                    parameters.mu1_infty,
@@ -2838,6 +3073,8 @@ namespace NonLinearPoroViscoElasticity
             else if (parameters.mat_type == "visco-Ogden")
                 visco_Ogden <dim, ADNumberType>material( parameters.solid_vol_frac,
                                                          parameters.lambda,
+                                                         parameters.growth_type,
+                                                         parameters.growth_incr,
                                                          time,
                                                          parameters.eigen_solver,
                                                          parameters.mu1_infty,
@@ -2892,6 +3129,12 @@ namespace NonLinearPoroViscoElasticity
                     const double p_fluid = solution_values_p_fluid_total[q_point];
                     double JxW = fe_values_ref.JxW(q_point);
 
+                    //Growth
+                    const Tensor<2, dim> Fg = lqph[q_point]->get_non_converged_growth_tensor();
+                   // const Tensor<2, dim> Fg_inv = invert(Fg); //inverse of growth tensor
+                   // const Tensor<2, dim, ADNumberType> Fve_AD = F_AD * Fg_inv;
+
+                    //Cauchy stress
                     static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
                     SymmetricTensor<2, dim> sigma_E;
                     const SymmetricTensor<2, dim, ADNumberType> sigma_E_AD = lqph[q_point]->get_Cauchy_E(F_AD);
@@ -2903,27 +3146,35 @@ namespace NonLinearPoroViscoElasticity
                            F[i][j] = Tensor<0,dim,double>(F_AD[i][j]);
                         }
 
-                    const double det_F = determinant(F);
-                    sum_vol_current_mpi  += det_F * JxW;
-                    sum_vol_reference_mpi += JxW;
-                    const double solid_vol_fraction = parameters.solid_vol_frac/det_F;
-                    sum_solid_vol_mpi += parameters.solid_vol_frac * JxW * det_F;
-
                     SymmetricTensor<2, dim> sigma_fluid_vol (I);
                     sigma_fluid_vol *= -p_fluid;
                     const SymmetricTensor<2, dim> sigma = sigma_E + sigma_fluid_vol;
 
+                    //Volumes
+                    const double det_Fg = determinant(Fg);
+                    const double det_F = determinant(F);
+                    sum_vol_current_mpi  += det_F * JxW;
+                    sum_vol_reference_mpi += JxW;
+                    const double solid_vol_fraction = parameters.solid_vol_frac/det_F;
+                    sum_solid_vol_mpi += parameters.solid_vol_frac * JxW * det_Fg;
+
+                    //Green-Lagrange strain
                     const Tensor<2, dim> E = 0.5 * (transpose(F)*F - I);
 
+                    //Seepage velocity
                     const Tensor<2, dim, ADNumberType> F_inv = invert(F);
                     const Tensor<1,dim, ADNumberType > grad_p_fluid_AD =  solution_grads_p_fluid_AD[q_point]*F_inv;
                     const Tensor<1, dim, ADNumberType> seepage_vel_AD = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p_fluid_AD);
 
+                    //Dissipations
                     const double porous_dissipation = lqph[q_point]->get_porous_dissipation(F_AD, grad_p_fluid_AD);
                     sum_porous_dissipation_mpi += porous_dissipation * det_F * JxW;
 
                     const double viscous_dissipation = lqph[q_point]->get_viscous_dissipation();
                     sum_viscous_dissipation_mpi += viscous_dissipation * det_F * JxW;
+
+                    //Growth
+                    const double growth_stretch = lqph[q_point]->get_converged_growth_stretch();
 
                     for (unsigned int j=0; j<dim; ++j)
                     {
@@ -2937,6 +3188,8 @@ namespace NonLinearPoroViscoElasticity
                     porous_dissipation_elements[cell->active_cell_index()] +=  porous_dissipation/n_q_points;
                     viscous_dissipation_elements[cell->active_cell_index()] +=  viscous_dissipation/n_q_points;
                     solid_vol_fraction_elements[cell->active_cell_index()] +=  solid_vol_fraction/n_q_points;
+
+                    growth_stretch_elements[cell->active_cell_index()] += growth_stretch/n_q_points;
 
                     cauchy_stresses_total_elements[3][cell->active_cell_index()] += ((sigma * basis_vectors[0])* basis_vectors[1])/n_q_points;
                     cauchy_stresses_total_elements[4][cell->active_cell_index()] += ((sigma * basis_vectors[0])* basis_vectors[2])/n_q_points;
@@ -2955,14 +3208,17 @@ namespace NonLinearPoroViscoElasticity
 
                 for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
                 {
+                    //Reaction force
                     if (cell->face(face)->at_boundary() == true &&
                         cell->face(face)->boundary_id() == get_reaction_boundary_id_for_output())
                     {
                         fe_face_values_ref.reinit(cell, face);
 
+                        //Get displacement gradients for current face
                         std::vector<Tensor<2,dim> > solution_grads_u_f(n_q_points_f);
                         fe_face_values_ref[u_fe].get_function_gradients(solution_total,solution_grads_u_f);
 
+                        //Get pressure for current element
                         std::vector< double > solution_values_p_fluid_total_f(n_q_points_f);
                         fe_face_values_ref[p_fluid_fe].get_function_values(solution_total,solution_values_p_fluid_total_f);
 
@@ -2971,6 +3227,7 @@ namespace NonLinearPoroViscoElasticity
                             const Tensor<1, dim> &N = fe_face_values_ref.normal_vector(f_q_point);
                             const double JxW_f = fe_face_values_ref.JxW(f_q_point);
 
+                            //Compute deformation gradient from displacements gradient (present configuration)
                             const Tensor<2, dim, ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
 
                             const std::vector<std::shared_ptr<const PointHistory<dim, ADNumberType> > >
@@ -2979,6 +3236,7 @@ namespace NonLinearPoroViscoElasticity
 
                             const double p_fluid = solution_values_p_fluid_total[f_q_point];
 
+                            //Cauchy stress
                             static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
                             SymmetricTensor<2, dim> sigma_E;
                             const SymmetricTensor<2, dim, ADNumberType> sigma_E_AD = lqph[f_q_point]->get_Cauchy_E(F_AD);
@@ -2998,12 +3256,14 @@ namespace NonLinearPoroViscoElasticity
                         }
                     }
 
+                    //Fluid flow
                     if (cell->face(face)->at_boundary() == true &&
                        ( cell->face(face)->boundary_id() == get_drained_boundary_id_for_output().first ||
                          cell->face(face)->boundary_id() == get_drained_boundary_id_for_output().second ) )
                     {
                         fe_face_values_ref.reinit(cell, face);
 
+                        //Get displacement gradients for current face
                         std::vector<Tensor<2,dim> > solution_grads_u_f(n_q_points_f);
                         fe_face_values_ref[u_fe].get_function_gradients(solution_total,solution_grads_u_f);
 
@@ -3017,6 +3277,7 @@ namespace NonLinearPoroViscoElasticity
                             const Tensor<1, dim> &N = fe_face_values_ref.normal_vector(f_q_point);
                             const double JxW_f = fe_face_values_ref.JxW(f_q_point);
 
+                            //Deformation gradient and inverse from displacements gradient (present configuration)
                             const Tensor<2, dim, ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
 
                             const Tensor<2, dim, ADNumberType> F_inv_AD = invert(F_AD);
@@ -3026,6 +3287,7 @@ namespace NonLinearPoroViscoElasticity
                                 lqph = quadrature_point_history.get_data(cell);
                             Assert(lqph.size() == n_q_points, ExcInternalError());
 
+                            //Seepage velocity
                             Tensor<1, dim> seepage;
                             double det_F = Tensor<0,dim,double>(det_F_AD);
                             const Tensor<1, dim, ADNumberType> grad_p = solution_grads_p_f[f_q_point]*F_inv_AD;
@@ -3114,7 +3376,8 @@ namespace NonLinearPoroViscoElasticity
                     plotpointfile << std::endl<< std::endl;
                 }
                 if (( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
-                      (parameters.geom_type == "Budday_cube_tension_compression")       ) &&
+                      (parameters.geom_type == "Budday_cube_tension_compression")||
+                      (parameters.geom_type == "Budday_cube_shear_fully_fixed")             ) &&
                     ( (abs(current_time - parameters.end_time/9.)    < 0.9*parameters.delta_t)||
                       (abs(current_time - 2.*parameters.end_time/9.) < 0.9*parameters.delta_t)||
                       (abs(current_time - 3.*parameters.end_time/9.) < 0.9*parameters.delta_t)||
@@ -3210,6 +3473,8 @@ namespace NonLinearPoroViscoElasticity
             data_out.add_data_vector (stretches_elements[0], "stretch_xx");
             data_out.add_data_vector (stretches_elements[1], "stretch_yy");
             data_out.add_data_vector (stretches_elements[2], "stretch_zz");
+
+            data_out.add_data_vector (growth_stretch_elements, "growth_stretch");
 
             data_out.build_patches(degree_displ);
             struct Filename
@@ -3745,6 +4010,10 @@ namespace NonLinearPoroViscoElasticity
           }
     };
 
+    // @sect3{Validation examples from Franceschini et al. 2006}
+    // We group the definition of the geometry, boundary and loading conditions specific to
+    // the validation examples from Franceschini et al. 2006 into a specific class.
+
     //@sect4{Franceschini experiments}
     template <int dim>
     class Franceschini2006Consolidation
@@ -4198,7 +4467,7 @@ namespace NonLinearPoroViscoElasticity
                                                        this->fe.component_mask(this->y_displacement) |
                                                        this->fe.component_mask(this->z_displacement) ));
 
-    
+
             if (this->parameters.load_type == "displacement")
             {
                 VectorTools::interpolate_boundary_values( this->dof_handler_ref,
@@ -4426,6 +4695,610 @@ namespace NonLinearPoroViscoElasticity
                 return std::make_pair(displ_incr,direction);
           }
     };
+
+    // @sect3{Continuum growth examples}
+    // We group the definition of the geometry, boundary and loading conditions specific to
+    // the examplesrelated to continuum growth into specific classes.
+
+    //@sect4{Muffin}
+    struct TransfMuffin
+    {
+      Point<3> operator()(const Point<3> &in) const
+      {
+        double radius_incr=1.0;
+        double half_height = 0.2;
+
+        Point<3> out;
+        out[2] = in[2]+half_height;
+        out[0] = in[0]*(1+radius_incr*out[2]/(2*half_height));
+        out[1] = in[1]*(1+radius_incr*out[2]/(2*half_height));
+
+        return out;
+      }
+    };
+
+    template <int dim>
+      class GrowingMuffin
+          : public Solid<dim>
+    {
+    public:
+        GrowingMuffin (const Parameters::AllParameters &parameters)
+        : Solid<dim> (parameters)
+      {}
+
+      virtual ~GrowingMuffin () {}
+
+    private:
+      virtual void
+      make_grid()
+      {
+
+          GridGenerator::cylinder( this->triangulation,
+                                   0.2,   //radius
+                                   0.2);  //half-length
+          //Create a cylinder around the x-axis. The cylinder extends from x=-"half_length"
+          //to x=+"half_length" and its projection into the yz-plane is a circle of radius "radius".
+          //The boundaries are colored according to the following scheme:
+          //0 for the hull of the cylinder, 1 for the left hand face and 2 for the right hand face.
+
+           /*
+         GridGenerator::truncated_cone(this->triangulation,
+                                       0.3,   //radius_0
+                                       0.5,   //radius_1
+                                       0.25);  //half-length
+           */
+          //Create a cylinder around the x-axis. The cylinder extends from x=-"half_length"
+          //to x=+"half_length" and its projection into the yz-plane is a circle of radius "radius_0"
+          //at x=-"half_length" and a circle of radius "radius_1" at x=+"half_length".
+          //In between the radius is linearly decreasing.
+          //The boundaries are colored according to the following scheme:
+          //0 for the hull of the cylinder, 1 for the left hand face and 2 for the right hand face.
+
+         //Rotate cylinder so that it is aligned with the z-axis
+         const double PI = 3.141592653589793;
+         const double rot_angle = 3.0*PI/2.0;
+         GridTools::rotate( rot_angle, 1, this->triangulation);
+         // Hull of cylinder = drained boundary        --> 0
+         // Left hand face is now bottom face = fixed  --> 1
+         // Right hand face is now top face = load     --> 2
+
+         //Shift cylinder upwards in z direction and transform into cone.
+         GridTools::transform(TransfMuffin(), this->triangulation);
+
+         this->triangulation.reset_manifold(0);
+         const CylindricalManifold<dim> manifold_description_3d(2);
+         this->triangulation.set_manifold (0, manifold_description_3d);
+         GridTools::scale(this->parameters.scale, this->triangulation);
+         this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
+         this->triangulation.reset_manifold(0);
+      }
+
+      virtual void
+      define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+      {
+        tracked_vertices[0][0] = 0.0*this->parameters.scale;
+        tracked_vertices[0][1] = 0.0*this->parameters.scale;
+        tracked_vertices[0][2] = 0.25*this->parameters.scale;
+
+        tracked_vertices[1][0] = 0.0*this->parameters.scale;
+        tracked_vertices[1][1] = 0.0*this->parameters.scale;
+        tracked_vertices[1][2] = 0.0*this->parameters.scale;
+      }
+
+      virtual void
+      make_dirichlet_constraints(ConstraintMatrix &constraints)
+      {
+          if (this->time.get_timestep() < 2)
+          {
+            VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                     2,
+                                                     ConstantFunction<dim>(this->parameters.drained_pressure,
+                                                                           this->n_components),
+                                                     constraints,
+                                                     (this->fe.component_mask(this->pressure)));
+          }
+          else
+          {
+            VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                     2,
+                                                     ZeroFunction<dim>(this->n_components),
+                                                     constraints,
+                                                     (this->fe.component_mask(this->pressure)));
+          }
+
+          VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                   1,
+                                                   ZeroFunction<dim>(this->n_components),
+                                                   constraints,
+                                                   ( this->fe.component_mask(this->x_displacement) |
+                                                     this->fe.component_mask(this->y_displacement) |
+                                                     this->fe.component_mask(this->z_displacement) ) );
+
+          VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                   0,
+                                                   ZeroFunction<dim>(this->n_components),
+                                                   constraints,
+                                                   ( this->fe.component_mask(this->x_displacement) |
+                                                     this->fe.component_mask(this->y_displacement) |
+                                                     this->fe.component_mask(this->z_displacement) ) );
+
+      }
+
+      virtual Tensor<1,dim>
+      get_neumann_traction (const types::boundary_id &boundary_id,
+                            const Point<dim>         &pt,
+                            const Tensor<1,dim>      &N) const
+      {
+        //To get rid of warning message
+        (void)boundary_id;
+        (void)pt;
+        (void)N;
+
+        return Tensor<1,dim>();
+      }
+
+      virtual double
+      get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                      const Point<dim>         &pt) const
+      {
+          //Silence compiler warnings
+          (void)pt;
+          (void)boundary_id;
+          return 0.0;
+      }
+
+      virtual types::boundary_id
+      get_reaction_boundary_id_for_output() const
+      {
+          return 0;
+      }
+
+      virtual  std::pair<types::boundary_id,types::boundary_id>
+      get_drained_boundary_id_for_output() const
+      {
+          return std::make_pair(2,2);
+      }
+
+      virtual  std::pair<double, FEValuesExtractors::Scalar>
+      get_dirichlet_load(const types::boundary_id &boundary_id) const
+      {
+          double displ_incr = 0;
+          FEValuesExtractors::Scalar direction;
+          (void)boundary_id;
+          return std::make_pair(displ_incr,direction);
+      }
+    };
+
+    //@sect4{Trapped turtle}
+    struct TransfTurtle
+    {
+      Point<3> operator()(const Point<3> &in) const
+      {
+        double x_incr=2.0;
+
+        Point<3> out;
+        out[0] = in[0]*(1+x_incr);
+        out[1] = in[1];
+        out[2] = in[2];
+
+        return out;
+      }
+    };
+
+    template <int dim>
+      class TrappedTurtle
+          : public Solid<dim>
+    {
+    public:
+        TrappedTurtle (const Parameters::AllParameters &parameters)
+        : Solid<dim> (parameters)
+      {}
+
+      virtual ~TrappedTurtle () {}
+
+    private:
+      virtual void
+      make_grid()
+      {
+          const Point< dim > center(0,0,0);
+          double radius = 1.0;
+          GridGenerator::half_hyper_ball( this->triangulation,
+                                          center,
+                                          radius );
+          //A half hyper-ball around center, which contains 6 in 3d.
+          //The cut plane is perpendicular to the x-axis.
+          //The boundary indicators are 0 for the curved boundary and 1 for the cut plane.
+          //The manifold id for the curved boundary is set to zero, and a SphericalManifold is attached to it.
+
+          //Rotate half-sphere so that it is perpendicular to the z-axis
+          const double PI = 3.141592653589793;
+          const double rot_angle = 3.0*PI/2.0;
+          GridTools::rotate( rot_angle, 1, this->triangulation);
+
+          //Elongate half-sphere in the x direction.
+          //GridTools::transform(TransfTurtle(), this->triangulation);
+
+         GridTools::scale(this->parameters.scale, this->triangulation);
+         this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
+
+
+         //Set area for constraint
+         double cirumf = PI * radius;
+         double x_plane_fix = 0.1*this->parameters.scale;
+         double margin = (cirumf*this->parameters.scale)/(4 * this->parameters.global_refinement);
+
+         typename Triangulation<dim>::active_cell_iterator cell =
+                 this->triangulation.begin_active(), endc = this->triangulation.end();
+         for (; cell != endc; ++cell)
+         {
+           for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+             if ( cell->face(face)->at_boundary() == true  &&
+                  cell->face(face)->center()[0] > 0        &&
+                  ( ((abs(cell->face(face)->center()[0] - x_plane_fix) < 0.5*margin ) &&
+                     (abs(cell->face(face)->center()[2]) < 0.5*radius*this->parameters.scale )) ||
+                    ((abs(cell->face(face)->center()[0] - x_plane_fix) < 0.4*margin ) &&
+                     (abs(cell->face(face)->center()[2]) > 0.5*radius*this->parameters.scale ))  ) )
+                   cell->face(face)->set_boundary_id(2);
+         }
+      }
+
+      virtual void
+      define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+      {
+        tracked_vertices[0][0] = 0.0*this->parameters.scale;
+        tracked_vertices[0][1] = 0.0*this->parameters.scale;
+        tracked_vertices[0][2] = 1.0*this->parameters.scale;
+
+        tracked_vertices[1][0] = 0.0*this->parameters.scale;
+        tracked_vertices[1][1] = 0.0*this->parameters.scale;
+        tracked_vertices[1][2] = 0.0*this->parameters.scale;
+      }
+
+      virtual void
+      make_dirichlet_constraints(ConstraintMatrix &constraints)
+      {
+          if (this->time.get_timestep() < 2)
+          {
+            VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                     0,
+                                                     ConstantFunction<dim>(this->parameters.drained_pressure,
+                                                                           this->n_components),
+                                                     constraints,
+                                                     (this->fe.component_mask(this->pressure)));
+
+            VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                     1,
+                                                     ConstantFunction<dim>(this->parameters.drained_pressure,
+                                                                           this->n_components),
+                                                     constraints,
+                                                     (this->fe.component_mask(this->pressure)));
+          }
+          else
+          {
+            VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                     0,
+                                                     ZeroFunction<dim>(this->n_components),
+                                                     constraints,
+                                                     (this->fe.component_mask(this->pressure)));
+
+            VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                     1,
+                                                     ZeroFunction<dim>(this->n_components),
+                                                     constraints,
+                                                     (this->fe.component_mask(this->pressure)));
+          }
+          VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                   1,
+                                                   ZeroFunction<dim>(this->n_components),
+                                                   constraints,
+                                                   ( this->fe.component_mask(this->z_displacement) ) );
+
+          VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                   2,
+                                                   ZeroFunction<dim>(this->n_components),
+                                                   constraints,
+                                                   ( this->fe.component_mask(this->x_displacement) |
+                                                     this->fe.component_mask(this->y_displacement) |
+                                                     this->fe.component_mask(this->z_displacement)) );
+      }
+
+      virtual Tensor<1,dim>
+      get_neumann_traction (const types::boundary_id &boundary_id,
+                            const Point<dim>         &pt,
+                            const Tensor<1,dim>      &N) const
+      {
+        //To get rid of warning message
+        (void)boundary_id;
+        (void)pt;
+        (void)N;
+
+        return Tensor<1,dim>();
+      }
+
+      virtual double
+      get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                      const Point<dim>         &pt) const
+      {
+          //Silence compiler warnings
+          (void)pt;
+          (void)boundary_id;
+          return 0.0;
+      }
+
+      virtual types::boundary_id
+      get_reaction_boundary_id_for_output() const
+      {
+          return 0;
+      }
+
+      virtual  std::pair<types::boundary_id,types::boundary_id>
+      get_drained_boundary_id_for_output() const
+      {
+          return std::make_pair(2,2);
+      }
+
+      virtual  std::pair<double, FEValuesExtractors::Scalar>
+      get_dirichlet_load(const types::boundary_id &boundary_id) const
+      {
+          double displ_incr = 0;
+          FEValuesExtractors::Scalar direction;
+          (void)boundary_id;
+          return std::make_pair(displ_incr,direction);
+      }
+    };
+
+
+    //@sect4{Brain cube}
+    template <int dim>
+      class GrowthBrainBaseCube
+          : public Solid<dim>
+    {
+    public:
+        GrowthBrainBaseCube (const Parameters::AllParameters &parameters)
+        : Solid<dim> (parameters)
+      {}
+
+      virtual ~GrowthBrainBaseCube () {}
+
+    private:
+      virtual void
+      make_grid()
+      {
+        GridGenerator::hyper_cube(this->triangulation,
+                                  0.0,
+                                  1.0,
+                                  true);
+        // Cube 1 x 1 x 1
+        // If the colorize flag is true, the boundary_ids of the boundary faces are assigned,
+        // such that the lower one in x-direction is 0, the upper one is 1. The indicators for
+        // the surfaces in y-direction are 2 and 3, the ones for z are 4 and 5.
+
+        // Assign all faces same boundary id = 0
+        typename Triangulation<dim>::active_cell_iterator cell =
+                this->triangulation.begin_active(), endc = this->triangulation.end();
+        for (; cell != endc; ++cell)
+            for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+                if (cell->face(face)->at_boundary() == true)
+                    cell->face(face)->set_boundary_id(0); //All surfaces have boundary id 0
+
+        GridTools::scale(this->parameters.scale, this->triangulation);
+        //this->triangulation.refine_global(std::max (1U, this->parameters.global_refinement));
+        this->triangulation.refine_global(this->parameters.global_refinement);
+      }
+
+      virtual void
+      define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+      {
+        tracked_vertices[0][0] = 0.5*this->parameters.scale;
+        tracked_vertices[0][1] = 0.5*this->parameters.scale;
+        tracked_vertices[0][2] = 1.0*this->parameters.scale;
+
+        tracked_vertices[1][0] = 0.5*this->parameters.scale;
+        tracked_vertices[1][1] = 0.5*this->parameters.scale;
+        tracked_vertices[1][2] = 0.5*this->parameters.scale;
+      }
+
+      virtual double
+      get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                      const Point<dim>         &pt) const
+      {
+          //Silence compiler warnings
+          (void)pt;
+          (void)boundary_id;
+          return 0.0;
+      }
+
+      virtual types::boundary_id
+      get_reaction_boundary_id_for_output() const
+      {
+          return 0;
+      }
+
+      virtual  std::pair<types::boundary_id,types::boundary_id>
+      get_drained_boundary_id_for_output() const
+      {
+          return std::make_pair(0,0);
+      }
+
+      virtual Tensor<1,dim>
+      get_neumann_traction (const types::boundary_id &boundary_id,
+                              const Point<dim>         &pt,
+                              const Tensor<1,dim>      &N) const
+      {
+          //To get rid of warning message
+          (void)boundary_id;
+          (void)pt;
+          (void)N;
+          return Tensor<1,dim>();
+        }
+
+      virtual  std::pair<double, FEValuesExtractors::Scalar>
+      get_dirichlet_load(const types::boundary_id &boundary_id) const
+      {
+          double displ_incr = 0;
+          FEValuesExtractors::Scalar direction;
+          (void)boundary_id;
+          return std::make_pair(displ_incr,direction);
+      }
+    };
+
+
+    template <int dim>
+      class GrowthBrainConfinedDrained
+          : public GrowthBrainBaseCube<dim>
+    {
+    public:
+        GrowthBrainConfinedDrained (const Parameters::AllParameters &parameters)
+        : GrowthBrainBaseCube<dim> (parameters)
+      {}
+
+      virtual ~GrowthBrainConfinedDrained () {}
+
+    private:
+      virtual void
+      make_dirichlet_constraints(ConstraintMatrix &constraints)
+      {
+          if (this->time.get_timestep() < 2) //Dirichlet BC on pressure nodes
+          {
+              VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                       0,
+                                                       ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                       constraints,
+                                                       (this->fe.component_mask(this->pressure)));
+          }
+          else
+          {
+              VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                        0,
+                                                        ZeroFunction<dim>(this->n_components),
+                                                        constraints,
+                                                        (this->fe.component_mask(this->pressure)));
+          }
+
+          VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                    0, //bottom face: fixed z-displacements
+                                                    ZeroFunction<dim>(this->n_components),
+                                                    constraints,
+                                                    ( this->fe.component_mask(this->x_displacement) |
+                                                      this->fe.component_mask(this->y_displacement) |
+                                                      this->fe.component_mask(this->z_displacement) ));
+      }
+    };
+
+    template <int dim>
+      class GrowthBrainConfinedUndrained
+          : public GrowthBrainBaseCube<dim>
+    {
+    public:
+        GrowthBrainConfinedUndrained (const Parameters::AllParameters &parameters)
+        : GrowthBrainBaseCube<dim> (parameters)
+      {}
+
+      virtual ~GrowthBrainConfinedUndrained () {}
+
+    private:
+      virtual void
+      make_dirichlet_constraints(ConstraintMatrix &constraints)
+      {
+
+          VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                    0, //bottom face: fixed z-displacements
+                                                    ZeroFunction<dim>(this->n_components),
+                                                    constraints,
+                                                    ( this->fe.component_mask(this->x_displacement) |
+                                                      this->fe.component_mask(this->y_displacement) |
+                                                      this->fe.component_mask(this->z_displacement) ));
+      }
+    };
+
+
+    template <int dim>
+      class GrowthBrainUnconfinedDrained
+          : public GrowthBrainBaseCube<dim>
+    {
+    public:
+        GrowthBrainUnconfinedDrained (const Parameters::AllParameters &parameters)
+        : GrowthBrainBaseCube<dim> (parameters)
+      {}
+
+      virtual ~GrowthBrainUnconfinedDrained () {}
+
+    private:
+      virtual void
+      make_dirichlet_constraints(ConstraintMatrix &constraints)
+      {
+          if (this->time.get_timestep() < 2) //Dirichlet BC on pressure nodes
+          {
+              VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                       0,
+                                                       ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                       constraints,
+                                                       (this->fe.component_mask(this->pressure)));
+          }
+          else
+          {
+              VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                        0,
+                                                        ZeroFunction<dim>(this->n_components),
+                                                        constraints,
+                                                        (this->fe.component_mask(this->pressure)));
+          }
+
+          // Fully-fix a node at the center of the cube
+          Point<dim> fix_node(0.5*this->parameters.scale, 0.5*this->parameters.scale, 0.5*this->parameters.scale);
+          typename DoFHandler<dim>::active_cell_iterator
+          cell = this->dof_handler_ref.begin_active(), endc = this->dof_handler_ref.end();
+          for (; cell != endc; ++cell)
+            for (unsigned int node = 0; node < GeometryInfo<dim>::vertices_per_cell; ++node)
+            {
+                if (  (abs(cell->vertex(node)[0]-fix_node[0]) < (1e-6 * this->parameters.scale))
+                  &&  (abs(cell->vertex(node)[1]-fix_node[1]) < (1e-6 * this->parameters.scale))
+                  &&  (abs(cell->vertex(node)[2]-fix_node[2]) < (1e-6 * this->parameters.scale)) )
+                {
+                    constraints.add_line(cell->vertex_dof_index(node, 0));
+                    constraints.add_line(cell->vertex_dof_index(node, 1));
+                    constraints.add_line(cell->vertex_dof_index(node, 2));
+
+                }
+            }
+      }
+    };
+
+    template <int dim>
+      class GrowthBrainUnconfinedUndrained
+          : public GrowthBrainBaseCube<dim>
+    {
+    public:
+        GrowthBrainUnconfinedUndrained (const Parameters::AllParameters &parameters)
+        : GrowthBrainBaseCube<dim> (parameters)
+      {}
+
+      virtual ~GrowthBrainUnconfinedUndrained () {}
+
+    private:
+      virtual void
+      make_dirichlet_constraints(ConstraintMatrix &constraints)
+      {
+          // Fully-fix a node at the center of the cube
+          Point<dim> fix_node(0.5*this->parameters.scale, 0.5*this->parameters.scale, 0.5*this->parameters.scale);
+          typename DoFHandler<dim>::active_cell_iterator
+          cell = this->dof_handler_ref.begin_active(), endc = this->dof_handler_ref.end();
+          for (; cell != endc; ++cell)
+            for (unsigned int node = 0; node < GeometryInfo<dim>::vertices_per_cell; ++node)
+            {
+                if (  (abs(cell->vertex(node)[0]-fix_node[0]) < (1e-6 * this->parameters.scale))
+                  &&  (abs(cell->vertex(node)[1]-fix_node[1]) < (1e-6 * this->parameters.scale))
+                  &&  (abs(cell->vertex(node)[2]-fix_node[2]) < (1e-6 * this->parameters.scale)) )
+                {
+                    constraints.add_line(cell->vertex_dof_index(node, 0));
+                    constraints.add_line(cell->vertex_dof_index(node, 1));
+                    constraints.add_line(cell->vertex_dof_index(node, 2));
+
+                }
+            }
+      }
+    };
+
 }
 
 // @sect3{Main function}
@@ -4433,7 +5306,7 @@ namespace NonLinearPoroViscoElasticity
 int main (int argc, char *argv[])
 {
   using namespace dealii;
-  using namespace NonLinearPoroViscoElasticity;
+  using namespace CompLimb;
 
   const unsigned int n_tbb_processes = 1;
   Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, n_tbb_processes);
@@ -4476,6 +5349,36 @@ int main (int argc, char *argv[])
         BrainBudday2017CubeShearFullyFixed<3> solid_3d(parameters);
         solid_3d.run();
       }
+      else if (parameters.geom_type == "growing_muffin")
+      {
+        GrowingMuffin<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "trapped_turtle")
+      {
+        TrappedTurtle<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "brain_growth_confined_drained")
+      {
+        GrowthBrainConfinedDrained<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "brain_growth_confined_undrained")
+      {
+        GrowthBrainConfinedUndrained<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "brain_growth_unconfined_drained")
+      {
+        GrowthBrainUnconfinedDrained<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "brain_growth_unconfined_undrained")
+      {
+        GrowthBrainUnconfinedUndrained<3> solid_3d(parameters);
+        solid_3d.run();
+      }
       else
       {
         AssertThrow(false, ExcMessage("Problem type not defined. Current setting: " + parameters.geom_type));
@@ -4513,6 +5416,3 @@ int main (int argc, char *argv[])
     }
   return 0;
 }
-
-
-

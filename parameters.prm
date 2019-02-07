@@ -16,23 +16,26 @@ end
 
 
 subsection Geometry
-  # Type of geometry:  Ehlers_tube_step_load | Ehlers_tube_increase_load | Ehlers_cube_consolidation 
+  # Type of geometry:  Ehlers_tube_step_load | Ehlers_tube_increase_load | Ehlers_cube_consolidation
   #                  | Franceschini_consolidation
-  #                  | Budday_cube_tension_compression | Budday_cube_tension_compression_fully_fixed 
-  #                  | Budday_cube_shear_fully_fixed 
-  set Geometry type       = Budday_cube_shear_fully_fixed
+  #                  | Budday_cube_tension_compression | Budday_cube_tension_compression_fully_fixed
+  #                  | Budday_cube_shear_fully_fixed
+  #                  | growing_muffin | trapped_turtle
+  #                  | brain_growth_confined_drained | brain_growth_confined_undrained
+  #                  | brain_growth_unconfined_drained | brain_growth_unconfined_undrained
+  set Geometry type       = growing_muffin
 
   # Global refinement level (higher value means finer mesh)
-  set Global refinement   = 2
+  set Global refinement   = 1
 
   # Global grid scaling factor (scales geometry size)
-  set Grid scale          = 5.0
+  set Grid scale          = 1.0
 
   #  Type of loading: pressure | displacement | none
-  set Load type           = displacement
+  set Load type           = none
 
   # Value of loading [Pa] for pressure and [mm] for displacements
-  set Load value          = 1.0
+  set Load value          = 0
 
   # Value of the prescribed fluid flow [mm/s], Q* = w*·N should include + or - sign.
   set Fluid flow value    = 0
@@ -47,15 +50,15 @@ subsection Material properties
   # ------------------------ SOLID ----------------------------------
 
   # Type of material:  Neo-Hooke, Ogden or visco-Ogden
-  set material        = visco-Ogden
+  set material        = Neo-Hooke
 
   # First Lame parameter [Pa] (for extension function related to compactation point)
-  set lambda          = 12250
+  set lambda          = 1.0e6
 
   # ===== Neo-Hooke only =====
 
   # Shear modulus [Pa] (Second Lame parameter)  -- Neo-Hooke
-  set shear modulus  =  250
+  set shear modulus  =  2.5e3
 
   # ===== Ogden  + Visco-Ogden only =====
 
@@ -103,6 +106,15 @@ subsection Material properties
   # Deformation-independent viscosity parameter [Pa·s]
   set viscosity_1       = 3870
 
+
+  # Type of continuum growth: none | morphogen | pressure
+  set growth          = morphogen
+
+  # ===== Morphogenetic growth only =====
+
+  # Morphogenetic growth increment per timestep
+  set growth_incr     = 0.01
+
   # ------------------------ FLUID ----------------------------------
 
   # Choose between Markert formulation of deformation-dependent intrinsic permeability (Markert)
@@ -122,15 +134,15 @@ subsection Material properties
   # To be used with Markert formulation of deformation-dependent intrinsic permeability
   set initial intrinsic permeability   = 1.0e-8
 
-  # Effective shear viscosity parameter of the fluid [Pa·s = 1e-6·N·s/mm³]  
+  # Effective shear viscosity parameter of the fluid [Pa·s = 1e-6·N·s/mm³]
   # To be used with Markert formulation of deformation-dependent intrinsic permeability
-  set fluid viscosity                  = 0.89e-3 
+  set fluid viscosity                  = 0.89e-3
 
   # ===== Ehlers only =====
 
   # Initial Darcy flow coefficient [mm/s]
   # To be used with Ehlers formulation of deformation-dependent Darcy flow coefficient
-  set initial Darcy coefficient   = 2.42e-7 
+  set initial Darcy coefficient   = 2.42e-7
 
   # Effective weight of fluid [1e-6·N/mm³]
   # To be used with Ehlers formulation of deformation-dependent Darcy flow coefficient
@@ -139,7 +151,7 @@ subsection Material properties
   # ------------------------ GRAVITY ----------------------------------
 
   # Gravity term considered (true) or neglected (false)
-  set gravity term      = true
+  set gravity term      = false
 
   # ===== gravity true only =====
 
@@ -162,7 +174,7 @@ subsection Nonlinear solver
 
   # Force residual tolerance
   set Tolerance force               = 1.0e-8
-  
+
   # Displacement error tolerance
   set Tolerance displacement        = 1.0e-8
 
@@ -174,7 +186,7 @@ end
 
 subsection Time
   # End time [s]
-  set End time            = 180.0
+  set End time            = 10.0
 
   # Time step size [s]
   set Time step size      =  1.0
