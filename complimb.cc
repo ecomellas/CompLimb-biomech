@@ -736,7 +736,8 @@ namespace CompLimb
           {}
 
           // Determine "extra" Kirchhoff stress as sum of isochoric and volumetric Kirchhoff stresses
-          SymmetricTensor<2, dim, NumberType> get_tau_E(const Tensor<2,dim, NumberType> &F) const
+          SymmetricTensor<2, dim, NumberType> get_tau_E(const Tensor<2,dim, NumberType> &F,
+                                                        const NumberType &p_fluid) const
           {
             //Compute (visco-elastic) part of the def. gradient tensor.
             const Tensor<2, dim> Fg = get_non_converged_growth_tensor();
@@ -786,7 +787,8 @@ namespace CompLimb
               growth_stretch_converged = growth_stretch;
           }
 
-          virtual void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F )
+          virtual void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F,
+                                                    const NumberType &p_fluid)
           {
               const double det_F = Tensor<0,dim,double>(determinant(F));
               Tensor<2, dim> Fg = get_non_converged_growth_tensor();
@@ -794,7 +796,7 @@ namespace CompLimb
               det_Fve = det_F/det_Fg;
 
               //Growth
-              this->update_growth_stretch();
+              this->update_growth_stretch(p_fluid);
           }
 
           virtual double get_viscous_dissipation( ) const = 0;
@@ -816,16 +818,24 @@ namespace CompLimb
 
         protected:
           //Compute growth criterion
-          double get_growth_criterion() const
+          double get_growth_criterion(const NumberType &p_fluid) const
           {
               double growth_criterion;
 
+              //No growth
               if (growth_type == "none")
                   growth_criterion=0.0;
 
-              else if (growth_type == "morphogen") //Morphogenetic growth: growth incr is const in every time step
+              //Morphogenetic growth: growth incr is const in every time step
+              else if (growth_type == "morphogen")
                   growth_criterion=growth_incr;
 
+              //Growth driven by pressure
+              else if (growth_type == "pressure")
+              {
+                  double growth_rate_pressure = 1.0;
+                  growth_criterion=growth_rate_pressure*pressure;
+              }
               else
                   throw std::runtime_error ("Growth type not implemented yet.");
 
@@ -850,9 +860,9 @@ namespace CompLimb
           }
 
           //Compute growth stretch
-          void update_growth_stretch()
+          void update_growth_stretch(const NumberType &p_fluid)
           {
-              double growth_criterion = this->get_growth_criterion();
+              double growth_criterion = this->get_growth_criterion(p_fluid);
              growth_stretch = growth_stretch_converged;
 
 
@@ -2761,7 +2771,7 @@ namespace CompLimb
 
             //Get some info from constitutive model of solid
             static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
-            const SymmetricTensor<2, dim, ADNumberType> tau_E = lqph[q_point]->get_tau_E(F_AD);
+            const SymmetricTensor<2, dim, ADNumberType> tau_E = lqph[q_point]->get_tau_E(F_AD, p_fluid);
             SymmetricTensor<2, dim, ADNumberType> tau_fluid_vol (I);
             tau_fluid_vol *= -1.0 * p_fluid * det_F_AD;
 
@@ -5299,6 +5309,57 @@ namespace CompLimb
       }
     };
 
+  /*  template <int dim>
+      class GrowthBrainLoadedUndrained
+          : public GrowthBrainBaseCube<dim>
+    {
+    public:
+        GrowthBrainLoadedUndrained (const Parameters::AllParameters &parameters)
+        : GrowthBrainBaseCube<dim> (parameters)
+      {}
+
+      virtual ~GrowthBrainLoadedUndrained () {}
+
+    private:
+      virtual void
+      make_dirichlet_constraints(ConstraintMatrix &constraints)
+      {
+          if (this->time.get_timestep() < 2) //Dirichlet BC on pressure nodes
+          {
+              VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                       0,
+                                                       ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                       constraints,
+                                                       (this->fe.component_mask(this->pressure)));
+          }
+          else
+          {
+              VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                        0,
+                                                        ZeroFunction<dim>(this->n_components),
+                                                        constraints,
+                                                        (this->fe.component_mask(this->pressure)));
+          }
+
+          // Fully-fix a node at the center of the cube
+          Point<dim> fix_node(0.5*this->parameters.scale, 0.5*this->parameters.scale, 0.5*this->parameters.scale);
+          typename DoFHandler<dim>::active_cell_iterator
+          cell = this->dof_handler_ref.begin_active(), endc = this->dof_handler_ref.end();
+          for (; cell != endc; ++cell)
+            for (unsigned int node = 0; node < GeometryInfo<dim>::vertices_per_cell; ++node)
+            {
+                if (  (abs(cell->vertex(node)[0]-fix_node[0]) < (1e-6 * this->parameters.scale))
+                  &&  (abs(cell->vertex(node)[1]-fix_node[1]) < (1e-6 * this->parameters.scale))
+                  &&  (abs(cell->vertex(node)[2]-fix_node[2]) < (1e-6 * this->parameters.scale)) )
+                {
+                    constraints.add_line(cell->vertex_dof_index(node, 0));
+                    constraints.add_line(cell->vertex_dof_index(node, 1));
+                    constraints.add_line(cell->vertex_dof_index(node, 2));
+
+                }
+            }
+      }
+    };*/
 }
 
 // @sect3{Main function}
