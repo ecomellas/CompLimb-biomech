@@ -261,7 +261,7 @@ namespace CompLimb
         double alpha3_mode_1;
         double viscosity_mode_1;
         std::string growth_type;
-        double growth_incr;
+        double growth_rate;
         std::string  fluid_type;
         double solid_vol_frac;
         double kappa_darcy;
@@ -363,6 +363,10 @@ namespace CompLimb
                             Patterns::Double(0,100),
                             "Morphogenetic growth increment per timestep");
 
+          prm.declare_entry("growth_rate_pressure", "0.01",
+                            Patterns::Double(0,100),
+                            "Growth rate for pressure-driven growth");
+
           prm.declare_entry("seepage definition", "Ehlers",
                             Patterns::Selection("Markert|Ehlers"),
                             "Type of formulation used to define the seepage velocity in the problem. "
@@ -438,7 +442,12 @@ namespace CompLimb
           alpha3_mode_1 = prm.get_double("alpha3_1");
           viscosity_mode_1 = prm.get_double("viscosity_1");
           growth_type =  prm.get("growth");
-          growth_incr =  prm.get_double("growth_incr");
+          if ( growth_type == "morphogen" )
+            growth_rate =  prm.get_double("growth_incr");
+          else if ( growth_type == "pressure" )
+            growth_rate =  prm.get_double("growth_rate_pressure");
+          else
+            growth_rate = 0.0;
           //Fluid
           fluid_type = prm.get("seepage definition");
           solid_vol_frac = prm.get_double("initial solid volume fraction");
@@ -717,14 +726,14 @@ namespace CompLimb
           Material_Hyperelastic( const double solid_vol_frac,
                                  const double lambda,
                                  const std::string growth_type,
-                                 const double growth_incr,
+                                 const double growth_rate,
                                  const Time  &time,
                                  const enum SymmetricTensorEigenvectorMethod eigen_solver)
             :
             n_OS (solid_vol_frac),
             lambda (lambda),
             growth_type(growth_type),
-            growth_incr(growth_incr),
+            growth_rate(growth_rate),
             time(time),
             growth_stretch(1.0),
             growth_stretch_converged(1.0),
@@ -736,8 +745,7 @@ namespace CompLimb
           {}
 
           // Determine "extra" Kirchhoff stress as sum of isochoric and volumetric Kirchhoff stresses
-          SymmetricTensor<2, dim, NumberType> get_tau_E(const Tensor<2,dim, NumberType> &F,
-                                                        const NumberType &p_fluid) const
+          SymmetricTensor<2, dim, NumberType> get_tau_E(const Tensor<2,dim, NumberType> &F) const
           {
             //Compute (visco-elastic) part of the def. gradient tensor.
             const Tensor<2, dim> Fg = get_non_converged_growth_tensor();
@@ -788,7 +796,7 @@ namespace CompLimb
           }
 
           virtual void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F,
-                                                    const NumberType &p_fluid)
+                                                    const NumberType &p_fluid_AD)
           {
               const double det_F = Tensor<0,dim,double>(determinant(F));
               Tensor<2, dim> Fg = get_non_converged_growth_tensor();
@@ -796,6 +804,7 @@ namespace CompLimb
               det_Fve = det_F/det_Fg;
 
               //Growth
+              const double p_fluid = Tensor<0,dim,double>(p_fluid_AD);
               this->update_growth_stretch(p_fluid);
           }
 
@@ -805,7 +814,7 @@ namespace CompLimb
           const double n_OS; //Initial porosity (solid volume fraction)
           const double lambda; //1st Lamé parameter (for extension function related to compactation point)
           const std::string growth_type;
-          const double growth_incr; //Morphogenetic growth increment per timestep
+          const double growth_rate; //Growth rate. For morphogen growth, increment per timestep
           const Time  &time;
 
           //Internal variables
@@ -818,7 +827,7 @@ namespace CompLimb
 
         protected:
           //Compute growth criterion
-          double get_growth_criterion(const NumberType &p_fluid) const
+          double get_growth_criterion(const double &p_fluid) const
           {
               double growth_criterion;
 
@@ -826,15 +835,18 @@ namespace CompLimb
               if (growth_type == "none")
                   growth_criterion=0.0;
 
-              //Morphogenetic growth: growth incr is const in every time step
+              //Morphogenetic growth: growth rate = growth increment and is const in every time step
               else if (growth_type == "morphogen")
-                  growth_criterion=growth_incr;
+                  growth_criterion=growth_rate;
 
               //Growth driven by pressure
               else if (growth_type == "pressure")
               {
-                  double growth_rate_pressure = 1.0;
-                  growth_criterion=growth_rate_pressure*pressure;
+                  if (p_fluid > 0.0) //Growth only for compressive pressures
+                    growth_criterion=growth_rate*p_fluid;
+                  else
+                    growth_criterion=0.0;
+
               }
               else
                   throw std::runtime_error ("Growth type not implemented yet.");
@@ -860,7 +872,7 @@ namespace CompLimb
           }
 
           //Compute growth stretch
-          void update_growth_stretch(const NumberType &p_fluid)
+          void update_growth_stretch(const double &p_fluid)
           {
               double growth_criterion = this->get_growth_criterion(p_fluid);
              growth_stretch = growth_stretch_converged;
@@ -868,7 +880,7 @@ namespace CompLimb
 
               if (growth_criterion != 0.0) //If there is growth, compute growth stretch
               {
-                /*
+
                   double growth_stretch_old = growth_stretch_converged;
                   double growth_stretch_new = growth_stretch_converged;
                   double dt = time.get_delta_t();
@@ -889,10 +901,10 @@ namespace CompLimb
                       growth_stretch_new = growth_stretch_old + residual/K;
                   }
                   growth_stretch = growth_stretch_new;
-                */
+
 
                   //For morphogenic growth it's easier and faster to just write:
-                  growth_stretch = growth_stretch_converged + growth_criterion;
+                //  growth_stretch = growth_stretch_converged + growth_criterion;
               }
           }
 
@@ -930,7 +942,7 @@ namespace CompLimb
             NeoHooke( const double solid_vol_frac,
                       const double lambda,
                       const std::string growth_type,
-                      const double growth_incr,
+                      const double growth_rate,
                       const Time  &time,
                       const enum SymmetricTensorEigenvectorMethod eigen_solver,
                       const double mu )
@@ -938,7 +950,7 @@ namespace CompLimb
             Material_Hyperelastic< dim, NumberType > (solid_vol_frac,
                                                       lambda,
                                                       growth_type,
-                                                      growth_incr,
+                                                      growth_rate,
                                                       time,
                                                       eigen_solver),
             mu(mu)
@@ -991,7 +1003,7 @@ namespace CompLimb
             Ogden( const double solid_vol_frac,
                    const double lambda,
                    const std::string growth_type,
-                   const double growth_incr,
+                   const double growth_rate,
                    const Time  &time,
                    const enum SymmetricTensorEigenvectorMethod eigen_solver,
                    const double mu1,
@@ -1004,7 +1016,7 @@ namespace CompLimb
             Material_Hyperelastic< dim, NumberType > (solid_vol_frac,
                                                       lambda,
                                                       growth_type,
-                                                      growth_incr,
+                                                      growth_rate,
                                                       time,
                                                       eigen_solver),
             mu({mu1,mu2,mu3}),
@@ -1065,7 +1077,7 @@ namespace CompLimb
             visco_Ogden( const double solid_vol_frac,
                          const double lambda,
                          const std::string growth_type,
-                         const double growth_incr,
+                         const double growth_rate,
                          const Time  &time,
                          const enum SymmetricTensorEigenvectorMethod eigen_solver,
                          const double mu1_infty,
@@ -1085,7 +1097,7 @@ namespace CompLimb
             Material_Hyperelastic< dim, NumberType > (solid_vol_frac,
                                                       lambda,
                                                       growth_type,
-                                                      growth_incr,
+                                                      growth_rate,
                                                       time,
                                                       eigen_solver),
             mu_infty({mu1_infty,mu2_infty,mu3_infty}),
@@ -1099,9 +1111,10 @@ namespace CompLimb
           ~visco_Ogden()
           {}
 
-          void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F )
+          void update_internal_equilibrium( const Tensor<2, dim, NumberType> &F,
+                                            const NumberType &p_fluid )
           {
-              Material_Hyperelastic < dim, NumberType >::update_internal_equilibrium(F);
+              Material_Hyperelastic < dim, NumberType >::update_internal_equilibrium(F, p_fluid);
 
               // Finite viscoelasticity following Reese & Govindjee (1998)
               // Algorithm for implicit exponential time integration
@@ -1525,7 +1538,7 @@ namespace CompLimb
                     solid_material.reset(new NeoHooke <dim, NumberType>(parameters.solid_vol_frac,
                                                                         parameters.lambda,
                                                                         parameters.growth_type,
-                                                                        parameters.growth_incr,
+                                                                        parameters.growth_rate,
                                                                         time,
                                                                         parameters.eigen_solver,
                                                                         parameters.mu));
@@ -1533,7 +1546,7 @@ namespace CompLimb
                     solid_material.reset(new Ogden <dim, NumberType>(parameters.solid_vol_frac,
                                                                      parameters.lambda,
                                                                      parameters.growth_type,
-                                                                     parameters.growth_incr,
+                                                                     parameters.growth_rate,
                                                                      time,
                                                                      parameters.eigen_solver,
                                                                      parameters.mu1_infty,
@@ -1546,7 +1559,7 @@ namespace CompLimb
                     solid_material.reset(new visco_Ogden <dim, NumberType>(parameters.solid_vol_frac,
                                                                            parameters.lambda,
                                                                            parameters.growth_type,
-                                                                           parameters.growth_incr,
+                                                                           parameters.growth_rate,
                                                                            time,
                                                                            parameters.eigen_solver,
                                                                            parameters.mu1_infty,
@@ -1610,9 +1623,10 @@ namespace CompLimb
                 solid_material->update_end_timestep();
             }
 
-            void update_internal_equilibrium(const Tensor<2, dim, NumberType> &F )
+            void update_internal_equilibrium(const Tensor<2, dim, NumberType> &F,
+                                             const NumberType &p_fluid)
             {
-                solid_material->update_internal_equilibrium(F);
+                solid_material->update_internal_equilibrium(F, p_fluid);
             }
 
             double get_viscous_dissipation() const
@@ -2755,11 +2769,11 @@ namespace CompLimb
             Assert(det_F_AD > 0, ExcInternalError());
             const Tensor<2, dim, ADNumberType> F_inv_AD = invert(F_AD); //inverse of def. gradient tensor
 
-            const ADNumberType p_fluid = scratch.solution_values_p_fluid_total[q_point];
+            const ADNumberType p_fluid_AD = scratch.solution_values_p_fluid_total[q_point];
 
             {
               PointHistory<dim, ADNumberType> *lqph_q_point_nc = const_cast<PointHistory<dim, ADNumberType>*>(lqph[q_point].get());
-              lqph_q_point_nc->update_internal_equilibrium(F_AD);
+              lqph_q_point_nc->update_internal_equilibrium(F_AD, p_fluid_AD);
             }
 
             //Growth
@@ -2771,9 +2785,9 @@ namespace CompLimb
 
             //Get some info from constitutive model of solid
             static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
-            const SymmetricTensor<2, dim, ADNumberType> tau_E = lqph[q_point]->get_tau_E(F_AD, p_fluid);
+            const SymmetricTensor<2, dim, ADNumberType> tau_E = lqph[q_point]->get_tau_E(F_AD);
             SymmetricTensor<2, dim, ADNumberType> tau_fluid_vol (I);
-            tau_fluid_vol *= -1.0 * p_fluid * det_F_AD;
+            tau_fluid_vol *= -1.0 * p_fluid_AD * det_F_AD;
 
             //Get some info from constitutive model of fluid
             const ADNumberType det_Fve_aux =  lqph[q_point]->get_converged_det_Fve();
@@ -3063,7 +3077,7 @@ namespace CompLimb
                 NeoHooke<dim, ADNumberType> material( parameters.solid_vol_frac,
                                                       parameters.lambda,
                                                       parameters.growth_type,
-                                                      parameters.growth_incr,
+                                                      parameters.growth_rate,
                                                       time,
                                                       parameters.eigen_solver,
                                                       parameters.mu );
@@ -3071,7 +3085,7 @@ namespace CompLimb
                 Ogden<dim, ADNumberType> material( parameters.solid_vol_frac,
                                                    parameters.lambda,
                                                    parameters.growth_type,
-                                                   parameters.growth_incr,
+                                                   parameters.growth_rate,
                                                    time,
                                                    parameters.eigen_solver,
                                                    parameters.mu1_infty,
@@ -3084,7 +3098,7 @@ namespace CompLimb
                 visco_Ogden <dim, ADNumberType>material( parameters.solid_vol_frac,
                                                          parameters.lambda,
                                                          parameters.growth_type,
-                                                         parameters.growth_incr,
+                                                         parameters.growth_rate,
                                                          time,
                                                          parameters.eigen_solver,
                                                          parameters.mu1_infty,
@@ -5309,57 +5323,6 @@ namespace CompLimb
       }
     };
 
-  /*  template <int dim>
-      class GrowthBrainLoadedUndrained
-          : public GrowthBrainBaseCube<dim>
-    {
-    public:
-        GrowthBrainLoadedUndrained (const Parameters::AllParameters &parameters)
-        : GrowthBrainBaseCube<dim> (parameters)
-      {}
-
-      virtual ~GrowthBrainLoadedUndrained () {}
-
-    private:
-      virtual void
-      make_dirichlet_constraints(ConstraintMatrix &constraints)
-      {
-          if (this->time.get_timestep() < 2) //Dirichlet BC on pressure nodes
-          {
-              VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                       0,
-                                                       ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
-                                                       constraints,
-                                                       (this->fe.component_mask(this->pressure)));
-          }
-          else
-          {
-              VectorTools::interpolate_boundary_values( this->dof_handler_ref,
-                                                        0,
-                                                        ZeroFunction<dim>(this->n_components),
-                                                        constraints,
-                                                        (this->fe.component_mask(this->pressure)));
-          }
-
-          // Fully-fix a node at the center of the cube
-          Point<dim> fix_node(0.5*this->parameters.scale, 0.5*this->parameters.scale, 0.5*this->parameters.scale);
-          typename DoFHandler<dim>::active_cell_iterator
-          cell = this->dof_handler_ref.begin_active(), endc = this->dof_handler_ref.end();
-          for (; cell != endc; ++cell)
-            for (unsigned int node = 0; node < GeometryInfo<dim>::vertices_per_cell; ++node)
-            {
-                if (  (abs(cell->vertex(node)[0]-fix_node[0]) < (1e-6 * this->parameters.scale))
-                  &&  (abs(cell->vertex(node)[1]-fix_node[1]) < (1e-6 * this->parameters.scale))
-                  &&  (abs(cell->vertex(node)[2]-fix_node[2]) < (1e-6 * this->parameters.scale)) )
-                {
-                    constraints.add_line(cell->vertex_dof_index(node, 0));
-                    constraints.add_line(cell->vertex_dof_index(node, 1));
-                    constraints.add_line(cell->vertex_dof_index(node, 2));
-
-                }
-            }
-      }
-    };*/
 }
 
 // @sect3{Main function}

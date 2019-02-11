@@ -23,19 +23,19 @@ subsection Geometry
   #                  | growing_muffin | trapped_turtle
   #                  | brain_growth_confined_drained | brain_growth_confined_undrained
   #                  | brain_growth_unconfined_drained | brain_growth_unconfined_undrained
-  set Geometry type       = growing_muffin
+  set Geometry type       = Budday_cube_tension_compression_fully_fixed
 
   # Global refinement level (higher value means finer mesh)
-  set Global refinement   = 1
+  set Global refinement   = 2
 
   # Global grid scaling factor (scales geometry size)
-  set Grid scale          = 1.0
+  set Grid scale          = 5.0
 
   #  Type of loading: pressure | displacement | none
-  set Load type           = none
+  set Load type           =  displacement
 
   # Value of loading [Pa] for pressure and [mm] for displacements
-  set Load value          = 0
+  set Load value          = -0.5
 
   # Value of the prescribed fluid flow [mm/s], Q* = w*·N should include + or - sign.
   set Fluid flow value    = 0
@@ -53,12 +53,12 @@ subsection Material properties
   set material        = Neo-Hooke
 
   # First Lame parameter [Pa] (for extension function related to compactation point)
-  set lambda          = 1.0e6
+  set lambda          = 24502
 
   # ===== Neo-Hooke only =====
 
   # Shear modulus [Pa] (Second Lame parameter)  -- Neo-Hooke
-  set shear modulus  =  2.5e3
+  set shear modulus  =  660.0
 
   # ===== Ogden  + Visco-Ogden only =====
 
@@ -108,13 +108,18 @@ subsection Material properties
 
 
   # Type of continuum growth: none | morphogen | pressure
-  set growth          = morphogen
+  set growth               = pressure
 
   # ===== Morphogenetic growth only =====
 
   # Morphogenetic growth increment per timestep
-  set growth_incr     = 0.01
+  set growth_incr          = 0.01
 
+  # ===== Pressure-driven growth only =====
+
+  # Growth rate
+  set growth_rate_pressure = 0.01
+  
   # ------------------------ FLUID ----------------------------------
 
   # Choose between Markert formulation of deformation-dependent intrinsic permeability (Markert)
