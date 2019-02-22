@@ -180,7 +180,8 @@ namespace CompLimb
                                                  "|Budday_cube_shear_fully_fixed"
                                                  "|growing_muffin|trapped_turtle"
                                                  "|brain_growth_confined_drained|brain_growth_confined_undrained"
-                                                 "|brain_growth_unconfined_drained|brain_growth_unconfined_undrained"),
+                                                 "|brain_growth_unconfined_drained|brain_growth_unconfined_undrained"
+                                                 "|idealised_half_joint"),
                                 "Type of geometry used. "
                                 "For Ehlers validation examples see Ehlers and Eipper (1999). "
                                 "For Franceschini brain consolidation see Franceschini et al. (2006)"
@@ -4722,7 +4723,7 @@ namespace CompLimb
 
     // @sect3{Continuum growth examples}
     // We group the definition of the geometry, boundary and loading conditions specific to
-    // the examplesrelated to continuum growth into specific classes.
+    // the examples related to continuum growth into specific classes.
 
     //@sect4{Muffin}
     struct TransfMuffin
@@ -5323,7 +5324,222 @@ namespace CompLimb
       }
     };
 
+
+    // @sect3{Axolotl limb examples}
+    // We group the definition of the geometry, boundary and loading conditions specific to
+    // the examples related to axolotl joint morphogenesis into specific classes.
+
+    //@sect4{Simplified example for biomechanical tissue-level model}
+    template <int dim>
+      class IdealisedHalfJoint
+          : public Solid<dim>
+    {
+    public:
+        IdealisedHalfJoint (const Parameters::AllParameters &parameters)
+        : Solid<dim> (parameters)
+      {}
+
+      virtual ~IdealisedHalfJoint () {}
+
+    private:
+      virtual void
+      make_grid()
+      {
+          double radius = 5.0;
+          double cylinder_height = 12.5;
+          Triangulation<dim>  tria_cylinder;
+          GridGenerator::cylinder( tria_cylinder,
+                                   radius,
+                                   0.5*cylinder_height);
+          //Create a cylinder around the x-axis. The cylinder extends from x=-"half_length"
+          //to x=+"half_length" and its projection into the yz-plane is a circle of radius "radius".
+          //The boundaries are colored according to the following scheme:
+          //0 for the hull of the cylinder, 1 for the left hand face and 2 for the right hand face.
+
+         //Rotate cylinder so that it is aligned with the z-axis
+         const double PI = 3.141592653589793;
+         const double rot_angle = 3.0*PI/2.0;
+         GridTools::rotate(rot_angle, 1, tria_cylinder);
+         const Tensor<1,dim> shift_cylinder({0.0, 0.0, -0.5*cylinder_height});
+         GridTools::shift(shift_cylinder, tria_cylinder);
+
+         // Hull of cylinder = drained boundary        --> 0
+         // Left hand face is now bottom face = fixed  --> 1
+         // Right hand face is now top face = load     --> 2
+
+         const Point< dim > center(0.0,0.0,0.0);
+         Triangulation<dim>  tria_half_sphere;
+         GridGenerator::half_hyper_ball( tria_half_sphere,
+                                         center,
+                                         radius );
+         //A half hyper-ball around center, which contains 6 in 3d.
+         //The cut plane is perpendicular to the x-axis.
+         //The boundary indicators are 0 for the curved boundary and 1 for the cut plane.
+         //The manifold id for the curved boundary is set to zero, and a SphericalManifold is attached to it.
+
+         //Rotate half-sphere so that it is perpendicular to the z-axis
+         GridTools::rotate(rot_angle, 1, tria_half_sphere);
+
+         //Merge the two meshes
+         GridGenerator::merge_triangulations(tria_cylinder, tria_half_sphere, this->triangulation);
+
+         //Assign boundary IDs
+         for (auto cell : this->triangulation.active_cell_iterators())
+           for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+              if ( cell->face(face)->at_boundary() == true  &&
+                   std::abs(cell->face(face)->center()[2] + cylinder_height) < 1.0e-6 )
+                          cell->face(face)->set_boundary_id(0);  //Bottom face
+
+              else if ( cell->face(face)->at_boundary() == true  &&
+                        cell->face(face)->center()[2] < 0.0      &&
+                        cell->face(face)->center()[2] > -1.0*cylinder_height )
+                          cell->face(face)->set_boundary_id(1);  //Hull of cylinder
+
+              else if ( cell->face(face)->at_boundary() == true  &&
+                        cell->face(face)->center()[2] > 0.0 )
+                          cell->face(face)->set_boundary_id(2);  //Spherical surface
+
+        //Set manifolds
+        const types::manifold_id  sphere_id = 0;
+        const types::manifold_id  inner_id = 1;
+        const types::manifold_id  cylinder_id = 2;
+
+        const SphericalManifold<dim> spherical_manifold(center);
+        TransfiniteInterpolationManifold<dim> inner_manifold;
+        const CylindricalManifold<dim> cylindrical_manifold(2);
+
+        //Assign manifold IDs
+        this->triangulation.set_all_manifold_ids(cylinder_id);
+        for (auto cell : this->triangulation.active_cell_iterators())
+          for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+            if ( std::abs(cell->face(face)->center()[0]) < 1.0e-6 &&
+                 std::abs(cell->face(face)->center()[1]) < 1.0e-6 &&
+                 cell->center()[2] < 0.0                             )
+                  cell->set_all_manifold_ids(numbers::flat_manifold_id);
+        for (auto cell : this->triangulation.active_cell_iterators())
+          if ( cell->center()[2] > 0.0 )
+                  cell->set_all_manifold_ids(inner_id);
+        this->triangulation.set_all_manifold_ids_on_boundary(2,sphere_id);
+
+        //Set manifold
+        this->triangulation.set_manifold (cylinder_id, cylindrical_manifold);
+        this->triangulation.set_manifold (sphere_id, spherical_manifold);
+        inner_manifold.initialize(this->triangulation);
+        this->triangulation.set_manifold (inner_id, inner_manifold);
+
+         //Refine mesh
+         this->triangulation.refine_global(1);
+         inner_manifold.initialize(this->triangulation);
+         if (this->parameters.global_refinement > 1)
+              this->triangulation.refine_global((this->parameters.global_refinement)-1);
+
+
+         //Set boundary ID for loading neumann conditions and pressure dirichlet conditions
+         for (auto cell : this->triangulation.active_cell_iterators())
+            for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+                if ( cell->face(face)->at_boundary() == true  &&
+                     cell->face(face)->center()[2] > (0.8*radius) )  //MUST GENERALISE THIS CONDITION
+                        cell->face(face)->set_boundary_id(100);  //Loaded surface
+                else if ( cell->face(face)->at_boundary() == true   &&
+                          cell->face(face)->center()[2] < (0.8*radius) )
+                        cell->face(face)->set_boundary_id(101);  //Drained surface
+
+         //Scale geometry
+         GridTools::scale(this->parameters.scale, this->triangulation);
+      }
+
+      virtual void
+      define_tracked_vertices(std::vector<Point<dim> > &tracked_vertices)
+      {
+        tracked_vertices[0][0] = 0.0*this->parameters.scale;
+        tracked_vertices[0][1] = 0.0*this->parameters.scale;
+        tracked_vertices[0][2] = 5.0*this->parameters.scale;
+
+        tracked_vertices[1][0] = 0.0*this->parameters.scale;
+        tracked_vertices[1][1] = 0.0*this->parameters.scale;
+        tracked_vertices[1][2] = -12.5*this->parameters.scale;
+      }
+
+      virtual void
+      make_dirichlet_constraints(ConstraintMatrix &constraints)
+      {
+          VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                   0,
+                                                   ZeroFunction<dim>(this->n_components),
+                                                   constraints,
+                                                   ( this->fe.component_mask(this->x_displacement) |
+                                                     this->fe.component_mask(this->y_displacement) |
+                                                     this->fe.component_mask(this->z_displacement) ) );
+
+           if (this->time.get_timestep() < 2) //Dirichlet BC on pressure nodes
+           {
+               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                        101,
+                                                        ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                        constraints,
+                                                        (this->fe.component_mask(this->pressure)));
+           }
+           else
+           {
+               VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                         101,
+                                                         ZeroFunction<dim>(this->n_components),
+                                                         constraints,
+                                                         (this->fe.component_mask(this->pressure)));
+           }
+      }
+
+      virtual Tensor<1,dim>
+      get_neumann_traction (const types::boundary_id &boundary_id,
+                            const Point<dim>         &pt,
+                            const Tensor<1,dim>      &N) const
+      {
+        if (this->parameters.load_type == "pressure")
+        {
+          if (boundary_id == 100)
+          {
+            return this->parameters.load * N;
+          }
+        }
+
+        (void)pt;
+
+        return Tensor<1,dim>();
+      }
+
+      virtual double
+      get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                      const Point<dim>         &pt) const
+      {
+          //Silence compiler warnings
+          (void)pt;
+          (void)boundary_id;
+          return 0.0;
+      }
+
+      virtual types::boundary_id
+      get_reaction_boundary_id_for_output() const
+      {
+          return 100;
+      }
+
+      virtual  std::pair<types::boundary_id,types::boundary_id>
+      get_drained_boundary_id_for_output() const
+      {
+          return std::make_pair(101,101);
+      }
+
+      virtual  std::pair<double, FEValuesExtractors::Scalar>
+      get_dirichlet_load(const types::boundary_id &boundary_id) const
+      {
+          double displ_incr = 0;
+          FEValuesExtractors::Scalar direction;
+          (void)boundary_id;
+          return std::make_pair(displ_incr,direction);
+      }
+    };
 }
+
 
 // @sect3{Main function}
 // Lastly we provide the main driver function which is similar to the other tutorials.
@@ -5401,6 +5617,11 @@ int main (int argc, char *argv[])
       else if (parameters.geom_type == "brain_growth_unconfined_undrained")
       {
         GrowthBrainUnconfinedUndrained<3> solid_3d(parameters);
+        solid_3d.run();
+      }
+      else if (parameters.geom_type == "idealised_half_joint")
+      {
+        IdealisedHalfJoint<3> solid_3d(parameters);
         solid_3d.run();
       }
       else
