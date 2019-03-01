@@ -4858,7 +4858,7 @@ namespace CompLimb
         (void)boundary_id;
         (void)pt;
         (void)N;
-
+        throw std::runtime_error ("No loading implemented for muffin example.");
         return Tensor<1,dim>();
       }
 
@@ -4890,6 +4890,7 @@ namespace CompLimb
           double displ_incr = 0;
           FEValuesExtractors::Scalar direction;
           (void)boundary_id;
+          throw std::runtime_error ("No loading implemented for muffin example.");
           return std::make_pair(displ_incr,direction);
       }
     };
@@ -5036,6 +5037,7 @@ namespace CompLimb
         (void)boundary_id;
         (void)pt;
         (void)N;
+        throw std::runtime_error ("Pressure loading not implemented for turtle example.");
 
         return Tensor<1,dim>();
       }
@@ -5154,6 +5156,7 @@ namespace CompLimb
           (void)boundary_id;
           (void)pt;
           (void)N;
+          throw std::runtime_error ("Pressure loading not implemented for brain growth examples.");
           return Tensor<1,dim>();
         }
 
@@ -5383,8 +5386,8 @@ namespace CompLimb
          //Merge the two meshes
          GridGenerator::merge_triangulations(tria_cylinder, tria_half_sphere, this->triangulation);
 
-         //Assign boundary IDs
-         for (auto cell : this->triangulation.active_cell_iterators())
+        // Assign boundary IDs
+        for (auto cell : this->triangulation.active_cell_iterators())
            for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
               if ( cell->face(face)->at_boundary() == true  &&
                    std::abs(cell->face(face)->center()[2] + cylinder_height) < 1.0e-6 )
@@ -5438,12 +5441,16 @@ namespace CompLimb
          for (auto cell : this->triangulation.active_cell_iterators())
             for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
                 if ( cell->face(face)->at_boundary() == true  &&
-                     cell->face(face)->center()[2] > (0.8*radius) )  //MUST GENERALISE THIS CONDITION
+                     cell->face(face)->center()[2] > (0.5*radius) )  //MUST GENERALISE THIS CONDITION
                         cell->face(face)->set_boundary_id(100);  //Loaded surface
-                else if ( cell->face(face)->at_boundary() == true   &&
-                          cell->face(face)->center()[2] < (0.8*radius) )
+                else if ( cell->face(face)->at_boundary() == true        &&
+                          cell->face(face)->center()[2] < (0.5*radius)   &&
+                          cell->face(face)->center()[2] > -1.0*cylinder_height )
                         cell->face(face)->set_boundary_id(101);  //Drained surface
-
+    /*            else if ( cell->face(face)->at_boundary() == true  &&
+                          cell->face(face)->center()[2] == -1.0*cylinder_height )
+                        cell->face(face)->set_boundary_id(0);  //Bottom surface + drained surface
+    */
          //Scale geometry
          GridTools::scale(this->parameters.scale, this->triangulation);
       }
@@ -5474,6 +5481,12 @@ namespace CompLimb
            if (this->time.get_timestep() < 2) //Dirichlet BC on pressure nodes
            {
                VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                        0,
+                                                        ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                        constraints,
+                                                        (this->fe.component_mask(this->pressure)));
+
+               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                         101,
                                                         ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                         constraints,
@@ -5482,10 +5495,25 @@ namespace CompLimb
            else
            {
                VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                         0,
+                                                         ZeroFunction<dim>(this->n_components),
+                                                         constraints,
+                                                         (this->fe.component_mask(this->pressure)));
+
+               VectorTools::interpolate_boundary_values( this->dof_handler_ref,
                                                          101,
                                                          ZeroFunction<dim>(this->n_components),
                                                          constraints,
                                                          (this->fe.component_mask(this->pressure)));
+           }
+
+           if (this->parameters.load_type == "displacement")
+           {
+               VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                          100,
+                                                          ConstantFunction<dim>(this->get_dirichlet_load(100).first,this->n_components),
+                                                          constraints,
+                                                          this->fe.component_mask(this->get_dirichlet_load(100).second));
            }
       }
 
@@ -5532,10 +5560,17 @@ namespace CompLimb
       virtual  std::pair<double, FEValuesExtractors::Scalar>
       get_dirichlet_load(const types::boundary_id &boundary_id) const
       {
-          double displ_incr = 0;
-          FEValuesExtractors::Scalar direction;
-          (void)boundary_id;
-          return std::make_pair(displ_incr,direction);
+            double displ_incr = 0;
+            FEValuesExtractors::Scalar direction;
+
+            if (boundary_id == 100)
+            {
+                if (this->time.get_current() == this->time.get_delta_t())
+                  displ_incr = this->parameters.load;
+
+                direction = this->z_displacement;
+            }
+            return std::make_pair(displ_incr,direction);
       }
     };
 }
