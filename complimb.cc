@@ -263,6 +263,7 @@ namespace CompLimb
         double viscosity_mode_1;
         std::string growth_type;
         double growth_rate;
+        double growth_exponential;
         std::string  fluid_type;
         double solid_vol_frac;
         double kappa_darcy;
@@ -368,6 +369,11 @@ namespace CompLimb
                             Patterns::Double(0,100),
                             "Growth rate for pressure-driven growth");
 
+          prm.declare_entry("growth_exponential_pressure", "1.0",
+                            Patterns::Double(1,100),
+                            "Growth exponential that determines nature of the dependency of growth on pressure "
+                            "(linear, quadratic, etc.) for pressure-driven growth");
+
           prm.declare_entry("seepage definition", "Ehlers",
                             Patterns::Selection("Markert|Ehlers"),
                             "Type of formulation used to define the seepage velocity in the problem. "
@@ -444,11 +450,20 @@ namespace CompLimb
           viscosity_mode_1 = prm.get_double("viscosity_1");
           growth_type =  prm.get("growth");
           if ( growth_type == "morphogen" )
+          {
             growth_rate =  prm.get_double("growth_incr");
+            growth_exponential = 0.0;
+          }
           else if ( growth_type == "pressure" )
+          {
             growth_rate =  prm.get_double("growth_rate_pressure");
+            growth_exponential =  prm.get_double("growth_exponential_pressure");
+          }
           else
+          {
             growth_rate = 0.0;
+            growth_exponential = 0.0;
+          }
           //Fluid
           fluid_type = prm.get("seepage definition");
           solid_vol_frac = prm.get_double("initial solid volume fraction");
@@ -728,6 +743,7 @@ namespace CompLimb
                                  const double lambda,
                                  const std::string growth_type,
                                  const double growth_rate,
+                                 const double growth_exponential,
                                  const Time  &time,
                                  const enum SymmetricTensorEigenvectorMethod eigen_solver)
             :
@@ -735,6 +751,7 @@ namespace CompLimb
             lambda (lambda),
             growth_type(growth_type),
             growth_rate(growth_rate),
+            growth_exponential(growth_exponential),
             time(time),
             growth_stretch(1.0),
             growth_stretch_converged(1.0),
@@ -816,6 +833,7 @@ namespace CompLimb
           const double lambda; //1st Lamé parameter (for extension function related to compactation point)
           const std::string growth_type;
           const double growth_rate; //Growth rate. For morphogen growth, increment per timestep
+          const double growth_exponential;
           const Time  &time;
 
           //Internal variables
@@ -844,7 +862,7 @@ namespace CompLimb
               else if (growth_type == "pressure")
               {
                   if (p_fluid > 0.0) //Growth only for compressive pressures
-                    growth_criterion=growth_rate*p_fluid;
+                    growth_criterion=growth_rate*std::pow(p_fluid, (1.0/growth_exponential));
                   else
                     growth_criterion=0.0;
 
@@ -944,6 +962,7 @@ namespace CompLimb
                       const double lambda,
                       const std::string growth_type,
                       const double growth_rate,
+                      const double growth_exponential,
                       const Time  &time,
                       const enum SymmetricTensorEigenvectorMethod eigen_solver,
                       const double mu )
@@ -952,6 +971,7 @@ namespace CompLimb
                                                       lambda,
                                                       growth_type,
                                                       growth_rate,
+                                                      growth_exponential,
                                                       time,
                                                       eigen_solver),
             mu(mu)
@@ -1005,6 +1025,7 @@ namespace CompLimb
                    const double lambda,
                    const std::string growth_type,
                    const double growth_rate,
+                   const double growth_exponential,
                    const Time  &time,
                    const enum SymmetricTensorEigenvectorMethod eigen_solver,
                    const double mu1,
@@ -1018,6 +1039,7 @@ namespace CompLimb
                                                       lambda,
                                                       growth_type,
                                                       growth_rate,
+                                                      growth_exponential,
                                                       time,
                                                       eigen_solver),
             mu({mu1,mu2,mu3}),
@@ -1079,6 +1101,7 @@ namespace CompLimb
                          const double lambda,
                          const std::string growth_type,
                          const double growth_rate,
+                         const double growth_exponential,
                          const Time  &time,
                          const enum SymmetricTensorEigenvectorMethod eigen_solver,
                          const double mu1_infty,
@@ -1099,6 +1122,7 @@ namespace CompLimb
                                                       lambda,
                                                       growth_type,
                                                       growth_rate,
+                                                      growth_exponential,
                                                       time,
                                                       eigen_solver),
             mu_infty({mu1_infty,mu2_infty,mu3_infty}),
@@ -1540,6 +1564,7 @@ namespace CompLimb
                                                                         parameters.lambda,
                                                                         parameters.growth_type,
                                                                         parameters.growth_rate,
+                                                                        parameters.growth_exponential,
                                                                         time,
                                                                         parameters.eigen_solver,
                                                                         parameters.mu));
@@ -1548,6 +1573,7 @@ namespace CompLimb
                                                                      parameters.lambda,
                                                                      parameters.growth_type,
                                                                      parameters.growth_rate,
+                                                                     parameters.growth_exponential,
                                                                      time,
                                                                      parameters.eigen_solver,
                                                                      parameters.mu1_infty,
@@ -1561,6 +1587,7 @@ namespace CompLimb
                                                                            parameters.lambda,
                                                                            parameters.growth_type,
                                                                            parameters.growth_rate,
+                                                                           parameters.growth_exponential,
                                                                            time,
                                                                            parameters.eigen_solver,
                                                                            parameters.mu1_infty,
@@ -3079,6 +3106,7 @@ namespace CompLimb
                                                       parameters.lambda,
                                                       parameters.growth_type,
                                                       parameters.growth_rate,
+                                                      parameters.growth_exponential,
                                                       time,
                                                       parameters.eigen_solver,
                                                       parameters.mu );
@@ -3087,6 +3115,7 @@ namespace CompLimb
                                                    parameters.lambda,
                                                    parameters.growth_type,
                                                    parameters.growth_rate,
+                                                   parameters.growth_exponential,
                                                    time,
                                                    parameters.eigen_solver,
                                                    parameters.mu1_infty,
@@ -3100,6 +3129,7 @@ namespace CompLimb
                                                          parameters.lambda,
                                                          parameters.growth_type,
                                                          parameters.growth_rate,
+                                                         parameters.growth_exponential,
                                                          time,
                                                          parameters.eigen_solver,
                                                          parameters.mu1_infty,

@@ -23,19 +23,20 @@ subsection Geometry
   #                  | growing_muffin | trapped_turtle
   #                  | brain_growth_confined_drained | brain_growth_confined_undrained
   #                  | brain_growth_unconfined_drained | brain_growth_unconfined_undrained
-  set Geometry type       = Budday_cube_tension_compression_fully_fixed
+  #                  | idealised_half_joint
+  set Geometry type       = idealised_half_joint
 
   # Global refinement level (higher value means finer mesh)
-  set Global refinement   = 2
+  set Global refinement   = 1
 
   # Global grid scaling factor (scales geometry size)
-  set Grid scale          = 5.0
+  set Grid scale          = 1.0
 
   #  Type of loading: pressure | displacement | none
-  set Load type           =  displacement
+  set Load type           = pressure
 
   # Value of loading [Pa] for pressure and [mm] for displacements
-  set Load value          = -0.5
+  set Load value          = -0.16
 
   # Value of the prescribed fluid flow [mm/s], Q* = w*·N should include + or - sign.
   set Fluid flow value    = 0
@@ -53,12 +54,12 @@ subsection Material properties
   set material        = Neo-Hooke
 
   # First Lame parameter [Pa] (for extension function related to compactation point)
-  set lambda          = 24502
+  set lambda          = 18.0e6
 
   # ===== Neo-Hooke only =====
 
   # Shear modulus [Pa] (Second Lame parameter)  -- Neo-Hooke
-  set shear modulus  =  660.0
+  set shear modulus  =  3.7e5
 
   # ===== Ogden  + Visco-Ogden only =====
 
@@ -118,7 +119,11 @@ subsection Material properties
   # ===== Pressure-driven growth only =====
 
   # Growth rate
-  set growth_rate_pressure = 0.01
+  set growth_rate_pressure = 1.0e-5
+  
+  # Nature of the dependency of growth on pressure (linear, quadratic, etc.)
+  set growth_exponential_pressure = 1.0
+  
   
   # ------------------------ FLUID ----------------------------------
 
@@ -175,23 +180,23 @@ end
 
 subsection Nonlinear solver
   # Number of Newton-Raphson iterations allowed
-  set Max iterations Newton-Raphson = 15
+  set Max iterations Newton-Raphson = 10
 
   # Force residual tolerance
-  set Tolerance force               = 1.0e-8
+  set Tolerance force               = 1.0e-6
 
   # Displacement error tolerance
-  set Tolerance displacement        = 1.0e-8
+  set Tolerance displacement        = 1.0e-6
 
   # Pore pressure error tolerance
-  set Tolerance pore pressure       = 1.0e-8
+  set Tolerance pore pressure       = 1.0e-6
 
 end
 
 
 subsection Time
   # End time [s]
-  set End time            = 10.0
+  set End time            = 100.0
 
   # Time step size [s]
   set Time step size      =  1.0
