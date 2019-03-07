@@ -861,7 +861,8 @@ namespace CompLimb
               //Growth driven by pressure
               else if (growth_type == "pressure")
               {
-                  if (p_fluid > 0.0) //Growth only for compressive pressures
+                  double tolerance = 1.0e-6;
+                  if (p_fluid > tolerance) //Growth only for compressive pressures
                     growth_criterion=growth_rate*std::pow(p_fluid, (1.0/growth_exponential));
                   else
                     growth_criterion=0.0;

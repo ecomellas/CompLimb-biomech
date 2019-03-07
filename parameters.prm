@@ -122,7 +122,7 @@ subsection Material properties
   set growth_rate_pressure = 1.0e-5
   
   # Nature of the dependency of growth on pressure (linear, quadratic, etc.)
-  set growth_exponential_pressure = 1.0
+  set growth_exponential_pressure = 10.0
   
   
   # ------------------------ FLUID ----------------------------------
@@ -196,10 +196,10 @@ end
 
 subsection Time
   # End time [s]
-  set End time            = 100.0
+  set End time            = 10.0
 
   # Time step size [s]
-  set Time step size      =  1.0
+  set Time step size      =  0.1
 end
 
 
