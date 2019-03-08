@@ -5379,8 +5379,8 @@ namespace CompLimb
       virtual void
       make_grid()
       {
-          double radius = 5.0;
-          double cylinder_height = 12.5;
+          double radius = 0.5;
+          double cylinder_height = 1.25;
           Triangulation<dim>  tria_cylinder;
           GridGenerator::cylinder( tria_cylinder,
                                    radius,
@@ -5491,11 +5491,11 @@ namespace CompLimb
       {
         tracked_vertices[0][0] = 0.0*this->parameters.scale;
         tracked_vertices[0][1] = 0.0*this->parameters.scale;
-        tracked_vertices[0][2] = 5.0*this->parameters.scale;
+        tracked_vertices[0][2] = 0.5*this->parameters.scale;
 
         tracked_vertices[1][0] = 0.0*this->parameters.scale;
         tracked_vertices[1][1] = 0.0*this->parameters.scale;
-        tracked_vertices[1][2] = -12.5*this->parameters.scale;
+        tracked_vertices[1][2] = -1.25*this->parameters.scale;
       }
 
       virtual void
@@ -5505,9 +5505,23 @@ namespace CompLimb
                                                    0,
                                                    ZeroFunction<dim>(this->n_components),
                                                    constraints,
-                                                   ( this->fe.component_mask(this->x_displacement) |
-                                                     this->fe.component_mask(this->y_displacement) |
-                                                     this->fe.component_mask(this->z_displacement) ) );
+                                                   this->fe.component_mask(this->z_displacement) );
+
+           Point<dim> fix_node(0.0, 0.0, -1.25*this->parameters.scale);
+           typename DoFHandler<dim>::active_cell_iterator
+           cell = this->dof_handler_ref.begin_active(), endc = this->dof_handler_ref.end();
+           for (; cell != endc; ++cell)
+             for (unsigned int node = 0; node < GeometryInfo<dim>::vertices_per_cell; ++node)
+             {
+                 if (  (abs(cell->vertex(node)[2]-fix_node[2]) < (1e-6 * this->parameters.scale))
+                   &&  (abs(cell->vertex(node)[0]-fix_node[0]) < (1e-6 * this->parameters.scale)))
+                    constraints.add_line(cell->vertex_dof_index(node, 0));
+
+                 if (  (abs(cell->vertex(node)[2]-fix_node[2]) < (1e-6 * this->parameters.scale))
+                   &&  (abs(cell->vertex(node)[1]-fix_node[1]) < (1e-6 * this->parameters.scale)))
+                    constraints.add_line(cell->vertex_dof_index(node, 1));
+             }
+
 
            if (this->time.get_timestep() < 2) //Dirichlet BC on pressure nodes
            {

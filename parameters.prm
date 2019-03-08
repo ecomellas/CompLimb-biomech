@@ -36,7 +36,7 @@ subsection Geometry
   set Load type           = pressure
 
   # Value of loading [Pa] for pressure and [mm] for displacements
-  set Load value          = -0.16
+  set Load value          = -127.32
 
   # Value of the prescribed fluid flow [mm/s], Q* = w*·N should include + or - sign.
   set Fluid flow value    = 0
@@ -119,10 +119,10 @@ subsection Material properties
   # ===== Pressure-driven growth only =====
 
   # Growth rate
-  set growth_rate_pressure = 1.0e-5
+  set growth_rate_pressure = 1.0e-6
   
   # Nature of the dependency of growth on pressure (linear, quadratic, etc.)
-  set growth_exponential_pressure = 10.0
+  set growth_exponential_pressure = 1.0
   
   
   # ------------------------ FLUID ----------------------------------
@@ -196,7 +196,7 @@ end
 
 subsection Time
   # End time [s]
-  set End time            = 10.0
+  set End time            = 1.0
 
   # Time step size [s]
   set Time step size      =  0.1
