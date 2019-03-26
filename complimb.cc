@@ -30,6 +30,7 @@
 #include <deal.II/base/mpi.h>
 #include <deal.II/base/quadrature_point_data.h>
 #include <deal.II/base/std_cxx11/shared_ptr.h>
+#include <deal.II/base/function_spherical.h>
 
 #include <deal.II/differentiation/ad.h>
 
@@ -5363,6 +5364,45 @@ namespace CompLimb
     // We group the definition of the geometry, boundary and loading conditions specific to
     // the examples related to axolotl joint morphogenesis into specific classes.
 
+    template <int dim>
+    class JointLoadingPattern : public Functions::Spherical<dim>
+    {
+    public:
+      JointLoadingPattern(const double phi_load,     //Polar angle of center of loading position
+                          const double d_phi_load,   //margin of load surface in polar direction
+                          const double theta_load,   //Azimuthal angle of center of loading position
+                          const double d_theta_load) //margin of load surface in azimuthal direction
+      : Functions::Spherical<dim>(),
+       phi_load(phi_load),
+       d_phi_load(d_phi_load),
+       theta_load(theta_load),
+       d_theta_load(d_theta_load)
+    {}
+
+    private:
+      virtual double svalue( const std::array<double,dim> &sp,
+                             const unsigned int /*component*/) const;
+      const double phi_load;
+      const double d_phi_load;
+      const double theta_load;
+      const double d_theta_load;
+    };
+
+    template <int dim>
+    double JointLoadingPattern<dim>::svalue( const std::array<double,dim> &sp,
+                                             const unsigned int /*component*/) const
+    {
+      double val = 0.0;
+      const double &theta = sp[1]; //Azimuthal angle
+      const double &phi = sp[2];   //Polar angle
+      if (( std::abs(phi_load - phi) < d_phi_load )   &&
+          ( std::abs(theta_load - theta) < d_theta_load ) )
+        val = 1.0;
+
+      Assert (dealii::numbers::is_finite(val), ExcInternalError());
+      return val;
+    }
+
     //@sect4{Simplified example for biomechanical tissue-level model}
     template <int dim>
       class IdealisedHalfJoint
@@ -5467,21 +5507,6 @@ namespace CompLimb
          if (this->parameters.global_refinement > 1)
               this->triangulation.refine_global((this->parameters.global_refinement)-1);
 
-
-         //Set boundary ID for loading neumann conditions and pressure dirichlet conditions
-         for (auto cell : this->triangulation.active_cell_iterators())
-            for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
-                if ( cell->face(face)->at_boundary() == true  &&
-                     cell->face(face)->center()[2] > (0.5*radius) )  //MUST GENERALISE THIS CONDITION
-                        cell->face(face)->set_boundary_id(100);  //Loaded surface
-                else if ( cell->face(face)->at_boundary() == true        &&
-                          cell->face(face)->center()[2] < (0.5*radius)   &&
-                          cell->face(face)->center()[2] > -1.0*cylinder_height )
-                        cell->face(face)->set_boundary_id(101);  //Drained surface
-    /*            else if ( cell->face(face)->at_boundary() == true  &&
-                          cell->face(face)->center()[2] == -1.0*cylinder_height )
-                        cell->face(face)->set_boundary_id(0);  //Bottom surface + drained surface
-    */
          //Scale geometry
          GridTools::scale(this->parameters.scale, this->triangulation);
       }
@@ -5525,6 +5550,7 @@ namespace CompLimb
 
            if (this->time.get_timestep() < 2) //Dirichlet BC on pressure nodes
            {
+             //All boundaries are drained
                VectorTools::interpolate_boundary_values(this->dof_handler_ref,
                                                         0,
                                                         ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
@@ -5532,7 +5558,13 @@ namespace CompLimb
                                                         (this->fe.component_mask(this->pressure)));
 
                VectorTools::interpolate_boundary_values(this->dof_handler_ref,
-                                                        101,
+                                                        1,
+                                                        ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
+                                                        constraints,
+                                                        (this->fe.component_mask(this->pressure)));
+
+               VectorTools::interpolate_boundary_values(this->dof_handler_ref,
+                                                        2,
                                                         ConstantFunction<dim>(this->parameters.drained_pressure,this->n_components),
                                                         constraints,
                                                         (this->fe.component_mask(this->pressure)));
@@ -5546,20 +5578,23 @@ namespace CompLimb
                                                          (this->fe.component_mask(this->pressure)));
 
                VectorTools::interpolate_boundary_values( this->dof_handler_ref,
-                                                         101,
+                                                         1,
                                                          ZeroFunction<dim>(this->n_components),
                                                          constraints,
                                                          (this->fe.component_mask(this->pressure)));
+
+                VectorTools::interpolate_boundary_values( this->dof_handler_ref,
+                                                          2,
+                                                          ZeroFunction<dim>(this->n_components),
+                                                          constraints,
+                                                          (this->fe.component_mask(this->pressure)));
            }
 
            if (this->parameters.load_type == "displacement")
            {
-               VectorTools::interpolate_boundary_values( this->dof_handler_ref,
-                                                          100,
-                                                          ConstantFunction<dim>(this->get_dirichlet_load(100).first,this->n_components),
-                                                          constraints,
-                                                          this->fe.component_mask(this->get_dirichlet_load(100).second));
+             AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: " + this->parameters.geom_type));
            }
+
       }
 
       virtual Tensor<1,dim>
@@ -5567,17 +5602,31 @@ namespace CompLimb
                             const Point<dim>         &pt,
                             const Tensor<1,dim>      &N) const
       {
+        Tensor<1,dim> load_vector;
+
         if (this->parameters.load_type == "pressure")
         {
-          if (boundary_id == 100)
+          const double PI = 3.141592653589793;
+          const double phi_load = PI/3.;       //Polar angle of center of loading position
+          const double d_phi_load = PI/6.;  //radius of load surface in polar direction
+          const double theta_load = 0.;     //Azimuthal angle of center of loading position
+          const double d_theta_load = PI/6.; //radius of load surface in azimuthal direction
+          const JointLoadingPattern<dim> loading_pattern( phi_load,
+                                                          d_phi_load,
+                                                          theta_load,
+                                                          d_theta_load);
+
+        //  if (boundary_id == 1) //Cylindrical surface
+        //  else if (boundary_id == 2) //Spherical surface
+
+          if (boundary_id == 2)
           {
-            return this->parameters.load * N;
+              load_vector = loading_pattern.value({pt[0],pt[1],pt[2]})
+                              * (this->parameters.load) * N;
           }
         }
 
-        (void)pt;
-
-        return Tensor<1,dim>();
+        return load_vector;
       }
 
       virtual double
