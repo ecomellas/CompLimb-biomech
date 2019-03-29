@@ -598,6 +598,7 @@ namespace CompLimb
       struct OutputParam
       {
         unsigned int timestep_output;
+        std::string  outtype;
 
         static void
         declare_parameters(ParameterHandler &prm);
@@ -613,6 +614,10 @@ namespace CompLimb
           prm.declare_entry("Time step number output", "1",
                             Patterns::Integer(0),
                             "Output data for time steps multiple of the given integer value.");
+          prm.declare_entry("Averaged results", "nodes",
+                             Patterns::Selection("elements|nodes"),
+                             "Output data associated with integration point values"
+                             " averaged on elements or on nodes.");
         }
         prm.leave_subsection();
       }
@@ -622,6 +627,7 @@ namespace CompLimb
         prm.enter_subsection("Output parameters");
         {
           timestep_output = prm.get_integer("Time step number output");
+          outtype = prm.get("Averaged results");
         }
         prm.leave_subsection();
       }
@@ -1768,11 +1774,14 @@ namespace CompLimb
             void update_end_timestep();
 
             //Post-processing and writing data to files
-            void output_results(const unsigned int timestep,
-                                const double current_time,
-                                TrilinosWrappers::MPI::BlockVector solution,
-                                std::vector<Point<dim> > &tracked_vertices,
-                                std::ofstream &pointfile) const;
+            void output_results_to_vtu( const unsigned int timestep,
+                                        const double current_time,
+                                        TrilinosWrappers::MPI::BlockVector solution) const;
+            void output_results_to_plot( const unsigned int timestep,
+                                         const double current_time,
+                                         TrilinosWrappers::MPI::BlockVector solution,
+                                         std::vector<Point<dim> > &tracked_vertices,
+                                         std::ofstream &pointfile) const;
 
             // Headers and footer for the output files
             void print_console_file_header( std::ofstream &outfile) const;
@@ -1818,6 +1827,7 @@ namespace CompLimb
             //We will use "u_fe" and "p_fluid_fe"as subscript in operator [] expressions on FEValues and FEFaceValues
             //objects to extract the components of the displacement vector and fluid pressure, respectively.
             const FEValuesExtractors::Vector u_fe;
+            const FEValuesExtractors::Scalar ux_fe;
             const FEValuesExtractors::Scalar p_fluid_fe;
 
             // Description of how the block-system is arranged. There are 3 blocks:
@@ -1951,6 +1961,7 @@ namespace CompLimb
         dof_handler_ref(triangulation),
         dofs_per_cell (fe.dofs_per_cell),
         u_fe(first_u_component),
+        ux_fe(first_u_component),
         p_fluid_fe(p_fluid_component),
         x_displacement(first_u_component),
         y_displacement(first_u_component+1),
@@ -2006,7 +2017,14 @@ namespace CompLimb
           }
 
           //Print results to output file
-          output_results(time.get_timestep(), time.get_current(), solution_n, tracked_vertices, pointfile);
+          output_results_to_vtu( time.get_timestep(),
+                                 time.get_current(),
+                                 solution_n           );
+          output_results_to_plot( time.get_timestep(),
+                                  time.get_current(),
+                                  solution_n,
+                                  tracked_vertices,
+                                  pointfile);
 
           //Increment time step (=load step)
           //NOTE: In solving the quasi-static problem, the time becomes a loading parameter,
@@ -2041,7 +2059,16 @@ namespace CompLimb
 
               //Output results
               if ( ( time.get_timestep() % parameters.timestep_output ) == 0 )
-                  output_results(time.get_timestep(), time.get_current(), solution_n, tracked_vertices, pointfile);
+              {
+                output_results_to_vtu( time.get_timestep(),
+                                       time.get_current(),
+                                       solution_n           );
+                output_results_to_plot( time.get_timestep(),
+                                        time.get_current(),
+                                        solution_n,
+                                        tracked_vertices,
+                                        pointfile);
+              }
 
               //Increment the time step (=load step)
               time.increment_time();
@@ -3022,98 +3049,233 @@ namespace CompLimb
           const unsigned int  p_fluid_component;
     };
 
-    //Print results to file
+//Example using DataPostprocessorTensor to have inf. strains averaged on nodes.
+// https://www.dealii.org/developer/doxygen/deal.II/classDataPostprocessorTensor.html
+/*
     template <int dim>
-    void Solid<dim>::output_results(const unsigned int timestep,
-                                    const double current_time,
-                                    TrilinosWrappers::MPI::BlockVector solution_IN,
-                                    std::vector<Point<dim> > &tracked_vertices_IN,
-                                    std::ofstream &plotpointfile) const
+    class StrainPostprocessor : public DataPostprocessorTensor<dim>
     {
-            TrilinosWrappers::MPI::BlockVector solution_total ( locally_owned_partitioning,
-                                                                locally_relevant_partitioning,
-                                                                mpi_communicator,
-                                                                false);
-            solution_total = solution_IN;
-            Vector<double> material_id;
-            Vector<double> polynomial_order;
-            material_id.reinit(triangulation.n_active_cells());
-            polynomial_order.reinit(triangulation.n_active_cells());
-            std::vector<types::subdomain_id> partition_int (triangulation.n_active_cells());
-            GradientPostprocessor<dim> gradient_postprocessor (p_fluid_component);
-            FilteredDataOut<dim> data_out(this_mpi_process);
-            std::vector<DataComponentInterpretation::DataComponentInterpretation>
-            data_component_interpretation(dim,
-                                          DataComponentInterpretation::component_is_part_of_vector);
-            data_component_interpretation.push_back(DataComponentInterpretation::component_is_scalar);
+    public:
+      StrainPostprocessor ()
+        :
+        DataPostprocessorTensor<dim> ("strain",
+                                      update_gradients)
+      {}
 
-            GridTools::get_subdomain_association (triangulation, partition_int);
+      virtual ~StrainPostprocessor(){}
 
-            //Variables needed to print the solution file for plotting
-            Point<dim> reaction_force;
-            Point<dim> reaction_force_pressure;
-            Point<dim> reaction_force_extra;
-            double total_fluid_flow = 0.0;
-            double total_porous_dissipation = 0.0;
-            double total_viscous_dissipation = 0.0;
-            double total_solid_vol = 0.0;
-            double total_vol_current = 0.0;
-            double total_vol_reference = 0.0;
-            std::vector<Point<dim+1> > solution_vertices(tracked_vertices_IN.size());
+      virtual void
+      evaluate_vector_field(
+        const DataPostprocessorInputs::Vector<dim> &input_data,
+        std::vector<Vector<double> >               &computed_quantities) const
+      {
+        AssertDimension (input_data.solution_gradients.size(),
+                         computed_quantities.size());
+        for (unsigned int p=0; p<input_data.solution_gradients.size(); ++p)
+          {
+            AssertDimension (computed_quantities[p].size(),
+                             (Tensor<2,dim>::n_independent_components));
+            for (unsigned int d=0; d<dim; ++d)
+              for (unsigned int e=0; e<dim; ++e)
+                computed_quantities[p][Tensor<2,dim>::component_to_unrolled_index(TableIndices<2>(d,e))]
+                  = (input_data.solution_gradients[p][d][e]
+                     +
+                     input_data.solution_gradients[p][e][d]) / 2;
+          }
+      }
+    };
+*/
 
-            //Auxiliar variables needed for mpi processing
-            Tensor<1, dim> sum_reaction_mpi;
-            Tensor<1, dim> sum_reaction_pressure_mpi;
-            Tensor<1, dim> sum_reaction_extra_mpi;
-            sum_reaction_mpi = 0.0;
-            sum_reaction_pressure_mpi = 0.0;
-            sum_reaction_extra_mpi = 0.0;
-            double sum_total_flow_mpi = 0.0;
-            double sum_porous_dissipation_mpi = 0.0;
-            double sum_viscous_dissipation_mpi = 0.0;
-            double sum_solid_vol_mpi = 0.0;
-            double sum_vol_current_mpi = 0.0;
-            double sum_vol_reference_mpi = 0.0;
+/* Trying to compute stresses averaged on nodes using DataPostprocessorTensor
+        template <int dim>
+        class StressPostprocessor : public DataPostprocessorTensor<dim>
+        {
+        public:
+          StressPostprocessor(const unsigned int p_fluid_component)
+            :
+            DataPostprocessorTensor<dim> ("stress",
+                                          update_gradients),
+            p_fluid_component(p_fluid_component)
+          {}
 
-             //Declare local variables with number of stress components & assign value according to "dim" value
-             unsigned int num_comp_symm_tensor = 6;
+          virtual ~StressPostprocessor(){}
 
-            //Declare local vectors to store values
-            std::vector<Vector<double> > cauchy_stresses_total_elements (num_comp_symm_tensor,
-                                                                         Vector<double> (triangulation.n_active_cells()));
-            std::vector<Vector<double> > cauchy_stresses_E_elements (num_comp_symm_tensor,
-                                                                     Vector<double> (triangulation.n_active_cells()));
-            std::vector<Vector<double> > cauchy_stresses_p_elements (num_comp_symm_tensor,
-                                                                     Vector<double> (triangulation.n_active_cells()));
-            std::vector<Vector<double> > stretches_elements (dim,
-                                                             Vector<double> (triangulation.n_active_cells()));
-            std::vector<Vector<double> > seepage_velocity_elements (dim,
-                                                                    Vector<double> (triangulation.n_active_cells()));
-            Vector<double >porous_dissipation_elements (triangulation.n_active_cells());
-            Vector<double >viscous_dissipation_elements (triangulation.n_active_cells());
-            Vector<double >solid_vol_fraction_elements (triangulation.n_active_cells());
+          virtual void
+          evaluate_vector_field(
+            const DataPostprocessorInputs::Vector<dim> &input_data,
+            std::vector<Vector<double> >               &computed_quantities) const
+          {
+            AssertDimension (input_data.solution_gradients.size(),
+                             computed_quantities.size());
+            for (unsigned int p=0; p<input_data.solution_gradients.size(); ++p)
+              {
+                AssertDimension (computed_quantities[p].size(),
+                                 (Tensor<2,dim>::n_independent_components));
 
-            Vector<double> growth_stretch_elements (triangulation.n_active_cells());
+              //Compute deformation gradient tensor
+               Tensor<2, dim> grad_u;
+               for (unsigned int d=0; d<dim; ++d)
+                 for (unsigned int e=0; e<dim; ++e)
+                    grad_u[d][e] = input_data.solution_gradients[p][d][e];
 
-            //Declare and initialize local unit vectors (to construct tensor basis)
-            std::vector<Tensor<1,dim> > basis_vectors (dim, Tensor<1,dim>() );
-            for (unsigned int i=0; i<dim; ++i)
-            {
-                basis_vectors[i][i] = 1;
-            }
+                Tensor<2, dim> F = Physics::Elasticity::Kinematics::F(grad_u);
 
-            //Declare an instance of the material class object
-            if (parameters.mat_type == "Neo-Hooke")
-                NeoHooke<dim, ADNumberType> material( parameters.solid_vol_frac,
-                                                      parameters.lambda,
-                                                      parameters.growth_type,
-                                                      parameters.growth_rate,
-                                                      parameters.growth_exponential,
-                                                      time,
-                                                      parameters.eigen_solver,
-                                                      parameters.mu );
-            else if (parameters.mat_type == "Ogden")
-                Ogden<dim, ADNumberType> material( parameters.solid_vol_frac,
+   //Now I need the growth tensor to compute the stresses:
+   // lqph = quadrature_point_history.get_data(cell);
+   // Fg = lqph[q_point]->get_non_converged_growth_tensor();
+   // Fg_inv = invert(Fg);
+   // Fve = F * Fg_inv;
+   // sigma_E = lqph[q_point]->get_Cauchy_E(F);
+   // sigma_fluid_vol (I);
+   // sigma_fluid_vol *= -p_fluid;
+   // sigma = sigma_E + sigma_fluid_vol;
+
+    //But all this info is stored at each gauss point. how can I project it
+    //to the nodes? How can I define the right material?
+    //Maybe it should be done outside the function and
+    //passed into here as a vector?
+                for (unsigned int d=0; d<dim; ++d)
+                  for (unsigned int e=0; e<dim; ++e)
+                    computed_quantities[p][Tensor<2,dim>::component_to_unrolled_index(TableIndices<2>(d,e))]
+                      = F[d][e];
+              }
+          }
+
+          private:
+            const unsigned int  p_fluid_component;
+        };
+*/
+
+/*
+    //Class to reduce stresses in Paraview to a single entry instead of 5
+    template <int dim>
+    class ComputeSingleOutput : public DataPostprocessorScalar<dim>
+    {
+      public:
+        ComputeSingleOutput (const std::string &name)
+          :
+          DataPostprocessorScalar<dim> (name,
+                                        update_values)
+        {}
+
+        virtual ~ComputeSingleOutput(){}
+
+        virtual void
+        evaluate_scalar_field (const DataPostprocessorInputs::Scalar<dim> &input_data,
+                              std::vector<Vector<double>>                 &computed_quantities) const
+        {
+            AssertDimension (input_data.solution_values.size(),
+                             computed_quantities.size());
+
+             for (unsigned int p=0; p<input_data.solution_values.size(); ++p)
+             {
+                 AssertDimension (computed_quantities[0].size(), 1);
+                 computed_quantities[p] = input_data.solution_values[p];
+             }
+         }
+
+        //private:
+        //  std::string name;
+    };*/
+    //Print results to vtu file
+    template <int dim>
+    void Solid<dim>::output_results_to_vtu(const unsigned int timestep,
+                                           const double current_time,
+                                           TrilinosWrappers::MPI::BlockVector solution_IN) const
+    {
+      TrilinosWrappers::MPI::BlockVector solution_total ( locally_owned_partitioning,
+                                                          locally_relevant_partitioning,
+                                                          mpi_communicator,
+                                                          false);
+      solution_total = solution_IN;
+      Vector<double> material_id;
+      Vector<double> polynomial_order;
+      material_id.reinit(triangulation.n_active_cells());
+      polynomial_order.reinit(triangulation.n_active_cells());
+      std::vector<types::subdomain_id> partition_int (triangulation.n_active_cells());
+      GradientPostprocessor<dim> gradient_postprocessor (p_fluid_component);
+    //Example using DataPostprocessorTensor to compute infinitesimal strains, copied from:
+    // https://www.dealii.org/developer/doxygen/deal.II/classDataPostprocessorTensor.html
+    //            StrainPostprocessor<dim> strain_postprocessor;
+    //            StressPostprocessor<dim> stress_postprocessor (p_fluid_component);
+
+            //Declare objects to output only one entry for each nodal result
+    /*            ComputeSingleOutput<dim> result_cauchy_xx("cauchy_xx");
+            ComputeSingleOutput<dim> result_cauchy_yy("cauchy_yy");
+            ComputeSingleOutput<dim> result_cauchy_zz("cauchy_zz");
+            ComputeSingleOutput<dim> result_cauchy_xy("cauchy_xy");
+            ComputeSingleOutput<dim> result_cauchy_xz("cauchy_xz");
+            ComputeSingleOutput<dim> result_cauchy_yz("cauchy_yz");
+    */
+       //Declare local variables with number of stress components
+       //& assign value according to "dim" value
+       unsigned int num_comp_symm_tensor = 6;
+
+      //Declare local vectors to store values
+      std::vector<Vector<double>>
+        cauchy_stresses_total_elements (num_comp_symm_tensor,
+                                        Vector<double> (triangulation.n_active_cells()));
+      std::vector<Vector<double>>
+        cauchy_stresses_E_elements (num_comp_symm_tensor,
+                                    Vector<double> (triangulation.n_active_cells()));
+      std::vector<Vector<double>>
+        cauchy_stresses_p_elements (num_comp_symm_tensor,
+                                    Vector<double> (triangulation.n_active_cells()));
+      std::vector<Vector<double>>
+        stretches_elements (dim,
+                            Vector<double> (triangulation.n_active_cells()));
+      std::vector<Vector<double>>
+        seepage_velocity_elements (dim,
+                                   Vector<double> (triangulation.n_active_cells()));
+      Vector<double >porous_dissipation_elements (triangulation.n_active_cells());
+      Vector<double >viscous_dissipation_elements (triangulation.n_active_cells());
+      Vector<double >solid_vol_fraction_elements (triangulation.n_active_cells());
+      Vector<double> growth_stretch_elements (triangulation.n_active_cells());
+
+      // OUTPUT AVERAGED ON NODES ----------------------------------------------
+
+      //Change dof_handler_ref.n_dofs() to 1/4 so solution is not repeated 4 times.
+      //But must extract the first component of each node, so there is still correspondance.
+      std::vector<Vector<double>>
+        cauchy_stresses_total_nodes(num_comp_symm_tensor,
+                                    Vector<double>(dof_handler_ref.n_dofs()));
+      std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+      Vector<double> mass_matrix_postprocessing(dof_handler_ref.n_dofs());
+      // -----------------------------------------------------------------------
+
+      //Declare and initialize local unit vectors (to construct tensor basis)
+      std::vector<Tensor<1,dim> > basis_vectors (dim, Tensor<1,dim>() );
+      for (unsigned int i=0; i<dim; ++i)
+      {
+          basis_vectors[i][i] = 1;
+      }
+
+      //Declare an instance of the material class object
+      if (parameters.mat_type == "Neo-Hooke")
+          NeoHooke<dim, ADNumberType> material( parameters.solid_vol_frac,
+                                                parameters.lambda,
+                                                parameters.growth_type,
+                                                parameters.growth_rate,
+                                                parameters.growth_exponential,
+                                                time,
+                                                parameters.eigen_solver,
+                                                parameters.mu );
+      else if (parameters.mat_type == "Ogden")
+          Ogden<dim, ADNumberType> material( parameters.solid_vol_frac,
+                                             parameters.lambda,
+                                             parameters.growth_type,
+                                             parameters.growth_rate,
+                                             parameters.growth_exponential,
+                                             time,
+                                             parameters.eigen_solver,
+                                             parameters.mu1_infty,
+                                             parameters.mu2_infty,
+                                             parameters.mu3_infty,
+                                             parameters.alpha1_infty,
+                                             parameters.alpha2_infty,
+                                             parameters.alpha3_infty );
+      else if (parameters.mat_type == "visco-Ogden")
+          visco_Ogden <dim, ADNumberType>material( parameters.solid_vol_frac,
                                                    parameters.lambda,
                                                    parameters.growth_type,
                                                    parameters.growth_rate,
@@ -3125,479 +3287,744 @@ namespace CompLimb
                                                    parameters.mu3_infty,
                                                    parameters.alpha1_infty,
                                                    parameters.alpha2_infty,
-                                                   parameters.alpha3_infty );
-            else if (parameters.mat_type == "visco-Ogden")
-                visco_Ogden <dim, ADNumberType>material( parameters.solid_vol_frac,
-                                                         parameters.lambda,
-                                                         parameters.growth_type,
-                                                         parameters.growth_rate,
-                                                         parameters.growth_exponential,
-                                                         time,
-                                                         parameters.eigen_solver,
-                                                         parameters.mu1_infty,
-                                                         parameters.mu2_infty,
-                                                         parameters.mu3_infty,
-                                                         parameters.alpha1_infty,
-                                                         parameters.alpha2_infty,
-                                                         parameters.alpha3_infty,
-                                                         parameters.mu1_mode_1,
-                                                         parameters.mu2_mode_1,
-                                                         parameters.mu3_mode_1,
-                                                         parameters.alpha1_mode_1,
-                                                         parameters.alpha2_mode_1,
-                                                         parameters.alpha3_mode_1,
-                                                         parameters.viscosity_mode_1);
-            else
-                Assert (false, ExcMessage("Material type not implemented"));
-
-            //Define a local instance of FEValues to compute updated values required to calculate stresses
-            const UpdateFlags uf_cell(update_values | update_gradients | update_JxW_values);
-            FEValues<dim> fe_values_ref (fe, qf_cell, uf_cell);
-
-            //Iterate through elements (cells) and Gauss Points
-            FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
-              cell (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.begin_active()),
-              endc (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.end());
-            for (; cell!=endc; ++cell)
-            {
-                if (cell->subdomain_id() != this_mpi_process) continue;
-                material_id(cell->active_cell_index()) = static_cast<int>(cell->material_id());
-
-                fe_values_ref.reinit(cell);
-
-                std::vector<Tensor<2,dim> > solution_grads_u(n_q_points);
-                fe_values_ref[u_fe].get_function_gradients(solution_total,solution_grads_u);
-
-                std::vector< double > solution_values_p_fluid_total(n_q_points);
-                fe_values_ref[p_fluid_fe].get_function_values(solution_total,solution_values_p_fluid_total);
-
-                std::vector<Tensor<1,dim > > solution_grads_p_fluid_AD (n_q_points);
-                fe_values_ref[p_fluid_fe].get_function_gradients(solution_total, solution_grads_p_fluid_AD);
-
-                for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
-                {
-                    const Tensor<2, dim, ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u[q_point]);
-                    Tensor<2, dim> F;
-
-                    const std::vector<std::shared_ptr<const PointHistory<dim, ADNumberType> > >
-                        lqph = quadrature_point_history.get_data(cell);
-                    Assert(lqph.size() == n_q_points, ExcInternalError());
-
-                    const double p_fluid = solution_values_p_fluid_total[q_point];
-                    double JxW = fe_values_ref.JxW(q_point);
-
-                    //Growth
-                    const Tensor<2, dim> Fg = lqph[q_point]->get_non_converged_growth_tensor();
-                   // const Tensor<2, dim> Fg_inv = invert(Fg); //inverse of growth tensor
-                   // const Tensor<2, dim, ADNumberType> Fve_AD = F_AD * Fg_inv;
-
-                    //Cauchy stress
-                    static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
-                    SymmetricTensor<2, dim> sigma_E;
-                    const SymmetricTensor<2, dim, ADNumberType> sigma_E_AD = lqph[q_point]->get_Cauchy_E(F_AD);
-
-                    for (unsigned int i=0; i<dim; ++i)
-                        for (unsigned int j=0; j<dim; ++j)
-                        {
-                           sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
-                           F[i][j] = Tensor<0,dim,double>(F_AD[i][j]);
-                        }
-
-                    SymmetricTensor<2, dim> sigma_fluid_vol (I);
-                    sigma_fluid_vol *= -p_fluid;
-                    const SymmetricTensor<2, dim> sigma = sigma_E + sigma_fluid_vol;
-
-                    //Volumes
-                    const double det_Fg = determinant(Fg);
-                    const double det_F = determinant(F);
-                    sum_vol_current_mpi  += det_F * JxW;
-                    sum_vol_reference_mpi += JxW;
-                    const double solid_vol_fraction = parameters.solid_vol_frac/det_F;
-                    sum_solid_vol_mpi += parameters.solid_vol_frac * JxW * det_Fg;
-
-                    //Green-Lagrange strain
-                    const Tensor<2, dim> E = 0.5 * (transpose(F)*F - I);
-
-                    //Seepage velocity
-                    const Tensor<2, dim, ADNumberType> F_inv = invert(F);
-                    const Tensor<1,dim, ADNumberType > grad_p_fluid_AD =  solution_grads_p_fluid_AD[q_point]*F_inv;
-                    const Tensor<1, dim, ADNumberType> seepage_vel_AD = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p_fluid_AD);
-
-                    //Dissipations
-                    const double porous_dissipation = lqph[q_point]->get_porous_dissipation(F_AD, grad_p_fluid_AD);
-                    sum_porous_dissipation_mpi += porous_dissipation * det_F * JxW;
-
-                    const double viscous_dissipation = lqph[q_point]->get_viscous_dissipation();
-                    sum_viscous_dissipation_mpi += viscous_dissipation * det_F * JxW;
-
-                    //Growth
-                    const double growth_stretch = lqph[q_point]->get_converged_growth_stretch();
-
-                    for (unsigned int j=0; j<dim; ++j)
-                    {
-                        cauchy_stresses_total_elements[j][cell->active_cell_index()] += ((sigma * basis_vectors[j])* basis_vectors[j])/n_q_points;
-                        cauchy_stresses_E_elements[j][cell->active_cell_index()] += ((sigma_E * basis_vectors[j])* basis_vectors[j])/n_q_points;
-                        cauchy_stresses_p_elements[j][cell->active_cell_index()] += ((sigma_fluid_vol * basis_vectors[j])* basis_vectors[j])/n_q_points;
-                        stretches_elements[j][cell->active_cell_index()] += std::sqrt(1.0+2.0*E[j][j])/n_q_points;
-                        seepage_velocity_elements[j][cell->active_cell_index()] +=  Tensor<0,dim,double>(seepage_vel_AD[j])/n_q_points;
-                    }
-
-                    porous_dissipation_elements[cell->active_cell_index()] +=  porous_dissipation/n_q_points;
-                    viscous_dissipation_elements[cell->active_cell_index()] +=  viscous_dissipation/n_q_points;
-                    solid_vol_fraction_elements[cell->active_cell_index()] +=  solid_vol_fraction/n_q_points;
-
-                    growth_stretch_elements[cell->active_cell_index()] += growth_stretch/n_q_points;
-
-                    cauchy_stresses_total_elements[3][cell->active_cell_index()] += ((sigma * basis_vectors[0])* basis_vectors[1])/n_q_points;
-                    cauchy_stresses_total_elements[4][cell->active_cell_index()] += ((sigma * basis_vectors[0])* basis_vectors[2])/n_q_points;
-
-                    cauchy_stresses_E_elements[3][cell->active_cell_index()] += ((sigma_E * basis_vectors[0])* basis_vectors[1])/n_q_points;
-                    cauchy_stresses_E_elements[4][cell->active_cell_index()] += ((sigma_E * basis_vectors[0])* basis_vectors[2])/n_q_points;
-
-                    cauchy_stresses_p_elements[3][cell->active_cell_index()] += ((sigma_fluid_vol * basis_vectors[0])* basis_vectors[1])/n_q_points;
-                    cauchy_stresses_p_elements[4][cell->active_cell_index()] += ((sigma_fluid_vol * basis_vectors[0])* basis_vectors[2])/n_q_points;
-                }
-
-       // Compute reaction force on load boundary & total fluid flow across drained boundary
-       // Define a local instance of FEFaceValues to compute values required to calculate reaction force
-                const UpdateFlags uf_face( update_values | update_gradients | update_normal_vectors | update_JxW_values );
-                FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
-
-                for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
-                {
-                    //Reaction force
-                    if (cell->face(face)->at_boundary() == true &&
-                        cell->face(face)->boundary_id() == get_reaction_boundary_id_for_output())
-                    {
-                        fe_face_values_ref.reinit(cell, face);
-
-                        //Get displacement gradients for current face
-                        std::vector<Tensor<2,dim> > solution_grads_u_f(n_q_points_f);
-                        fe_face_values_ref[u_fe].get_function_gradients(solution_total,solution_grads_u_f);
-
-                        //Get pressure for current element
-                        std::vector< double > solution_values_p_fluid_total_f(n_q_points_f);
-                        fe_face_values_ref[p_fluid_fe].get_function_values(solution_total,solution_values_p_fluid_total_f);
-
-                        for (unsigned int f_q_point = 0; f_q_point < n_q_points_f; ++f_q_point)
-                        {
-                            const Tensor<1, dim> &N = fe_face_values_ref.normal_vector(f_q_point);
-                            const double JxW_f = fe_face_values_ref.JxW(f_q_point);
-
-                            //Compute deformation gradient from displacements gradient (present configuration)
-                            const Tensor<2, dim, ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
-
-                            const std::vector<std::shared_ptr<const PointHistory<dim, ADNumberType> > >
-                                lqph = quadrature_point_history.get_data(cell);
-                            Assert(lqph.size() == n_q_points, ExcInternalError());
-
-                            const double p_fluid = solution_values_p_fluid_total[f_q_point];
-
-                            //Cauchy stress
-                            static const SymmetricTensor< 2, dim, double> I (Physics::Elasticity::StandardTensors<dim>::I);
-                            SymmetricTensor<2, dim> sigma_E;
-                            const SymmetricTensor<2, dim, ADNumberType> sigma_E_AD = lqph[f_q_point]->get_Cauchy_E(F_AD);
-
-                            for (unsigned int i=0; i<dim; ++i)
-                                for (unsigned int j=0; j<dim; ++j)
-                                {
-                                   sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
-                                }
-
-                            SymmetricTensor<2, dim> sigma_fluid_vol (I);
-                            sigma_fluid_vol *= -1.0*p_fluid;
-                            const SymmetricTensor<2, dim> sigma = sigma_E + sigma_fluid_vol;
-                            sum_reaction_mpi += sigma * N * JxW_f;
-                            sum_reaction_pressure_mpi += sigma_fluid_vol * N * JxW_f;
-                            sum_reaction_extra_mpi += sigma_E * N * JxW_f;
-                        }
-                    }
-
-                    //Fluid flow
-                    if (cell->face(face)->at_boundary() == true &&
-                       ( cell->face(face)->boundary_id() == get_drained_boundary_id_for_output().first ||
-                         cell->face(face)->boundary_id() == get_drained_boundary_id_for_output().second ) )
-                    {
-                        fe_face_values_ref.reinit(cell, face);
-
-                        //Get displacement gradients for current face
-                        std::vector<Tensor<2,dim> > solution_grads_u_f(n_q_points_f);
-                        fe_face_values_ref[u_fe].get_function_gradients(solution_total,solution_grads_u_f);
-
-                        //Get pressure gradients for current face
-                        std::vector<Tensor<1,dim> > solution_grads_p_f(n_q_points_f);
-                        fe_face_values_ref[p_fluid_fe].get_function_gradients(solution_total,solution_grads_p_f);
-
-
-                        for (unsigned int f_q_point = 0; f_q_point < n_q_points_f; ++f_q_point)
-                        {
-                            const Tensor<1, dim> &N = fe_face_values_ref.normal_vector(f_q_point);
-                            const double JxW_f = fe_face_values_ref.JxW(f_q_point);
-
-                            //Deformation gradient and inverse from displacements gradient (present configuration)
-                            const Tensor<2, dim, ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
-
-                            const Tensor<2, dim, ADNumberType> F_inv_AD = invert(F_AD);
-                            ADNumberType det_F_AD = determinant(F_AD);
-
-                            const std::vector<std::shared_ptr<const PointHistory<dim, ADNumberType> > >
-                                lqph = quadrature_point_history.get_data(cell);
-                            Assert(lqph.size() == n_q_points, ExcInternalError());
-
-                            //Seepage velocity
-                            Tensor<1, dim> seepage;
-                            double det_F = Tensor<0,dim,double>(det_F_AD);
-                            const Tensor<1, dim, ADNumberType> grad_p = solution_grads_p_f[f_q_point]*F_inv_AD;
-                            const Tensor<1, dim, ADNumberType> seepage_AD
-                                   = lqph[f_q_point]->get_seepage_velocity_current(F_AD, grad_p);
-
-                            for (unsigned int i=0; i<dim; ++i)
-                                seepage[i] = Tensor<0,dim,double>(seepage_AD[i]);
-
-                            sum_total_flow_mpi += (seepage/det_F) * N * JxW_f;
-                        }
-                    }
-                }
-            }
-
-            //Sum the results from different MPI process and then add to the reaction_force vector
-            //In theory, the solution on each surface (each cell) only exists in one MPI process
-            //so, we add all MPI process, one will have the solution and the others will be zero
-            for (unsigned int d=0; d<dim; ++d)
-            {
-                reaction_force[d] = Utilities::MPI::sum(sum_reaction_mpi[d], mpi_communicator);
-                reaction_force_pressure[d] = Utilities::MPI::sum(sum_reaction_pressure_mpi[d], mpi_communicator);
-                reaction_force_extra[d] = Utilities::MPI::sum(sum_reaction_extra_mpi[d], mpi_communicator);
-            }
-
-            //Same for total fluid flow, and for porous and viscous dissipations
-            total_fluid_flow = Utilities::MPI::sum(sum_total_flow_mpi, mpi_communicator);
-            total_porous_dissipation = Utilities::MPI::sum(sum_porous_dissipation_mpi, mpi_communicator);
-            total_viscous_dissipation = Utilities::MPI::sum(sum_viscous_dissipation_mpi, mpi_communicator);
-            total_solid_vol = Utilities::MPI::sum(sum_solid_vol_mpi, mpi_communicator);
-            total_vol_current = Utilities::MPI::sum(sum_vol_current_mpi, mpi_communicator);
-            total_vol_reference = Utilities::MPI::sum(sum_vol_reference_mpi, mpi_communicator);
-
-        //  Extract solution for tracked vectors
-        // Copying an MPI::BlockVector into MPI::Vector is not possible, so we copy each block of MPI::BlockVector into an MPI::Vector
-        // And then we copy the MPI::Vector into "normal" Vectors
-            TrilinosWrappers::MPI::Vector solution_vector_u_MPI(solution_total.block(u_block));
-            TrilinosWrappers::MPI::Vector solution_vector_p_MPI(solution_total.block(p_fluid_block));
-            Vector<double> solution_u_vector(solution_vector_u_MPI);
-            Vector<double> solution_p_vector(solution_vector_p_MPI);
-
-            if (this_mpi_process == 0)
-            {
-                //Append the pressure solution vector to the displacement solution vector,
-                //creating a single solution vector equivalent to the original BlockVector
-                //so FEFieldFunction will work with the dof_handler_ref.
-                Vector<double> solution_vector(solution_p_vector.size()+solution_u_vector.size());
-
-                for (unsigned int d=0; d<(solution_u_vector.size()); ++d)
-                    solution_vector[d] = solution_u_vector[d];
-
-                for (unsigned int d=0; d<(solution_p_vector.size()); ++d)
-                    solution_vector[solution_u_vector.size()+d] = solution_p_vector[d];
-
-                Functions::FEFieldFunction<dim,DoFHandler<dim>,Vector<double>>
-                find_solution(dof_handler_ref, solution_vector);
-
-                for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
-                {
-                    Vector<double> update(dim+1);
-                    Point<dim> pt_ref;
-
-                    pt_ref[0]= tracked_vertices_IN[p][0];
-                    pt_ref[1]= tracked_vertices_IN[p][1];
-                    pt_ref[2]= tracked_vertices_IN[p][2];
-
-                   find_solution.vector_value(pt_ref, update);
-
-                   for (unsigned int d=0; d<(dim+1); ++d)
-                   {
-                       //For values close to zero, set to 0.0
-                       if ( abs(update[d]) < 1.5*parameters.tol_u )
-                           update[d] = 0.0;
-                       solution_vertices[p][d] = update[d];
-                   }
-                }
-        // Write the results to the plotting file.
-        // Add two blank lines between cycles in the cyclic loading examples so GNUPLOT can detect each cycle as a different block
-                if (( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
-                      (parameters.geom_type == "Budday_cube_tension_compression")||
-                      (parameters.geom_type == "Budday_cube_shear_fully_fixed")                  ) &&
-                    ( (abs(current_time - parameters.end_time/3.)    < 0.9*parameters.delta_t)||
-                      (abs(current_time - 2.*parameters.end_time/3.) < 0.9*parameters.delta_t)   ) &&
-                      parameters.num_cycle_sets == 1 )
-                {
-                    plotpointfile << std::endl<< std::endl;
-                }
-                if (( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
-                      (parameters.geom_type == "Budday_cube_tension_compression")||
-                      (parameters.geom_type == "Budday_cube_shear_fully_fixed")             ) &&
-                    ( (abs(current_time - parameters.end_time/9.)    < 0.9*parameters.delta_t)||
-                      (abs(current_time - 2.*parameters.end_time/9.) < 0.9*parameters.delta_t)||
-                      (abs(current_time - 3.*parameters.end_time/9.) < 0.9*parameters.delta_t)||
-                      (abs(current_time - 5.*parameters.end_time/9.) < 0.9*parameters.delta_t)||
-                      (abs(current_time - 7.*parameters.end_time/9.) < 0.9*parameters.delta_t) ) &&
-                      parameters.num_cycle_sets == 2 )
-                {
-                    plotpointfile << std::endl<< std::endl;
-                }
-
-                plotpointfile <<  std::setprecision(6) << std::scientific;
-                plotpointfile << std::setw(16) << current_time        << ","
-                              << std::setw(15) << total_vol_reference << ","
-                              << std::setw(15) << total_vol_current   << ","
-                              << std::setw(15) << total_solid_vol     << ",";
-
-                if (current_time == 0.0)
-                {
-                    for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
-                    {
-                        for (unsigned int d=0; d<dim; ++d)
-                            plotpointfile << std::setw(15) << 0.0 << ",";
-
-                        plotpointfile << std::setw(15) << parameters.drained_pressure << ",";
-                    }
-                    for (unsigned int d=0; d<(3*dim+2); ++d)
-                        plotpointfile << std::setw(15) << 0.0 << ",";
-
-                    plotpointfile << std::setw(15) << 0.0;
-                }
-                else
-                {
-                    for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
-                        for (unsigned int d=0; d<(dim+1); ++d)
-                            plotpointfile << std::setw(15) << solution_vertices[p][d]<< ",";
-
-                    for (unsigned int d=0; d<dim; ++d)
-                        plotpointfile << std::setw(15) << reaction_force[d] << ",";
-
-                    for (unsigned int d=0; d<dim; ++d)
-                        plotpointfile << std::setw(15) << reaction_force_pressure[d] << ",";
-
-                    for (unsigned int d=0; d<dim; ++d)
-                        plotpointfile << std::setw(15) << reaction_force_extra[d] << ",";
-
-                    plotpointfile << std::setw(15) << total_fluid_flow << ","
-                                  << std::setw(15) << total_porous_dissipation<< ","
-                                  << std::setw(15) << total_viscous_dissipation;
-                }
-                plotpointfile << std::endl;
-            }
-
-// Add the results to the solution to create the output file for Paraview
-            std::vector<std::string> solution_name(dim, "displacement");
-            solution_name.push_back("pore_pressure");
-
-            data_out.attach_dof_handler(dof_handler_ref);
-            data_out.add_data_vector(solution_total,
-                                     solution_name,
-                                     DataOut<dim>::type_dof_data,
-                                     data_component_interpretation);
-
-            data_out.add_data_vector (solution_total,
-                                      gradient_postprocessor);
-
-            const Vector<double> partitioning(partition_int.begin(),
-                                              partition_int.end());
-
-            data_out.add_data_vector (material_id, "material_id");
-            data_out.add_data_vector (partitioning, "partitioning");
-
-            data_out.add_data_vector (cauchy_stresses_total_elements[0], "sigma_total_xx");
-            data_out.add_data_vector (cauchy_stresses_total_elements[1], "sigma_total_yy");
-            data_out.add_data_vector (cauchy_stresses_total_elements[2], "sigma_total_zz");
-            data_out.add_data_vector (cauchy_stresses_total_elements[3], "sigma_total_xy");
-            data_out.add_data_vector (cauchy_stresses_total_elements[4], "sigma_total_xz");
-            data_out.add_data_vector (cauchy_stresses_total_elements[5], "sigma_total_yz");
-
-            data_out.add_data_vector (cauchy_stresses_E_elements[0], "sigma_extra_xx");
-            data_out.add_data_vector (cauchy_stresses_E_elements[1], "sigma_extra_yy");
-            data_out.add_data_vector (cauchy_stresses_E_elements[2], "sigma_extra_zz");
-            data_out.add_data_vector (cauchy_stresses_E_elements[3], "sigma_extra_xy");
-            data_out.add_data_vector (cauchy_stresses_E_elements[4], "sigma_extra_xz");
-            data_out.add_data_vector (cauchy_stresses_E_elements[5], "sigma_extra_yz");
-
-            data_out.add_data_vector (cauchy_stresses_p_elements[0], "sigma_pressure_xx");
-            data_out.add_data_vector (cauchy_stresses_p_elements[1], "sigma_pressure_yy");
-            data_out.add_data_vector (cauchy_stresses_p_elements[2], "sigma_pressure_zz");
-            data_out.add_data_vector (cauchy_stresses_p_elements[3], "sigma_pressure_xy");
-            data_out.add_data_vector (cauchy_stresses_p_elements[4], "sigma_pressure_xz");
-            data_out.add_data_vector (cauchy_stresses_p_elements[5], "sigma_pressure_yz");
-
-            data_out.add_data_vector (stretches_elements[0], "stretch_xx");
-            data_out.add_data_vector (stretches_elements[1], "stretch_yy");
-            data_out.add_data_vector (stretches_elements[2], "stretch_zz");
-
-            data_out.add_data_vector (growth_stretch_elements, "growth_stretch");
-
-            data_out.build_patches(degree_displ);
-            struct Filename
-            {
-              static std::string get_filename_vtu (unsigned int process,
-                                                   unsigned int timestep,
-                                                   const unsigned int n_digits = 5)
+                                                   parameters.alpha3_infty,
+                                                   parameters.mu1_mode_1,
+                                                   parameters.mu2_mode_1,
+                                                   parameters.mu3_mode_1,
+                                                   parameters.alpha1_mode_1,
+                                                   parameters.alpha2_mode_1,
+                                                   parameters.alpha3_mode_1,
+                                                   parameters.viscosity_mode_1);
+      else
+          Assert (false, ExcMessage("Material type not implemented"));
+
+      //Define a local instance of FEValues to compute updated values required to calculate stresses
+      const UpdateFlags uf_cell(update_values | update_gradients | update_JxW_values);
+      FEValues<dim> fe_values_ref (fe, qf_cell, uf_cell);
+
+      //Iterate through elements (cells) and Gauss Points
+      FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+        cell (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.begin_active()),
+        endc (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.end());
+      //start cell loop
+      for (; cell!=endc; ++cell)
+      {
+          if (cell->subdomain_id() != this_mpi_process) continue;
+          material_id(cell->active_cell_index()) = static_cast<int>(cell->material_id());
+
+          fe_values_ref.reinit(cell);
+
+          std::vector<Tensor<2,dim> > solution_grads_u(n_q_points);
+          fe_values_ref[u_fe].get_function_gradients(solution_total,solution_grads_u);
+
+          std::vector< double > solution_values_p_fluid_total(n_q_points);
+          fe_values_ref[p_fluid_fe].get_function_values(solution_total,solution_values_p_fluid_total);
+
+          std::vector<Tensor<1,dim > > solution_grads_p_fluid_AD (n_q_points);
+          fe_values_ref[p_fluid_fe].get_function_gradients(solution_total, solution_grads_p_fluid_AD);
+
+          // OUTPUT AVERAGED ON NODES ----------------------------------------------
+          cell->get_dof_indices(local_dof_indices);
+          //Change dof_handler_ref.n_dofs() to 1/4 so solution is not repeated 4 times.
+          //But must extract the first component of each node, so there is still correspondance.
+
+          // -----------------------------------------------------------------------
+          //start gauss point loop
+          for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
+          {
+              const Tensor<2, dim, ADNumberType>
+                F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u[q_point]);
+              ADNumberType det_F_AD = determinant(F_AD);
+              const double det_F = Tensor<0,dim,double>(det_F_AD);
+
+              const std::vector<std::shared_ptr<const PointHistory<dim, ADNumberType> > >
+                  lqph = quadrature_point_history.get_data(cell);
+              Assert(lqph.size() == n_q_points, ExcInternalError());
+
+              const double p_fluid = solution_values_p_fluid_total[q_point];
+              double JxW = fe_values_ref.JxW(q_point);
+
+              //Cauchy stress
+              static const SymmetricTensor< 2, dim, double>
+                I (Physics::Elasticity::StandardTensors<dim>::I);
+              SymmetricTensor<2, dim> sigma_E;
+              const SymmetricTensor<2, dim, ADNumberType> sigma_E_AD =
+                lqph[q_point]->get_Cauchy_E(F_AD);
+
+              for (unsigned int i=0; i<dim; ++i)
+                  for (unsigned int j=0; j<dim; ++j)
+                     sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
+
+              SymmetricTensor<2, dim> sigma_fluid_vol (I);
+              sigma_fluid_vol *= -p_fluid;
+              const SymmetricTensor<2, dim> sigma = sigma_E + sigma_fluid_vol;
+
+              //Volumes
+              const double solid_vol_fraction = parameters.solid_vol_frac/det_F;
+
+              //Green-Lagrange strain
+              const Tensor<2, dim> E_strain = 0.5 * (transpose(F_AD)*F_AD - I);
+                                   
+              //Seepage velocity
+              const Tensor<2, dim, ADNumberType> F_inv = invert(F_AD);
+              const Tensor<1,dim, ADNumberType >
+                grad_p_fluid_AD =  solution_grads_p_fluid_AD[q_point]*F_inv;
+              const Tensor<1, dim, ADNumberType>
+                seepage_vel_AD = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p_fluid_AD);
+
+              //Dissipations
+              const double porous_dissipation =
+                lqph[q_point]->get_porous_dissipation(F_AD, grad_p_fluid_AD);
+              const double viscous_dissipation =
+                lqph[q_point]->get_viscous_dissipation();
+
+              //Growth
+              const double growth_stretch =
+                lqph[q_point]->get_converged_growth_stretch();
+
+              // OUTPUT AVERAGED ON ELEMENTS -------------------------------------------
+              if (parameters.outtype == "elements")
               {
-                std::ostringstream filename_vtu;
-                filename_vtu
-                << "solution."
-                << Utilities::int_to_string (process, n_digits)
-                << "."
-                << Utilities::int_to_string(timestep, n_digits)
-                << ".vtu";
-                return filename_vtu.str();
+                  for (unsigned int j=0; j<dim; ++j)
+                  {
+                      cauchy_stresses_total_elements[j][cell->active_cell_index()]
+                        += ((sigma * basis_vectors[j])* basis_vectors[j])/n_q_points;
+                      cauchy_stresses_E_elements[j][cell->active_cell_index()]
+                        += ((sigma_E * basis_vectors[j])* basis_vectors[j])/n_q_points;
+                      cauchy_stresses_p_elements[j][cell->active_cell_index()]
+                        += ((sigma_fluid_vol * basis_vectors[j])* basis_vectors[j])/n_q_points;
+                      stretches_elements[j][cell->active_cell_index()]
+                        += std::sqrt(1.0+2.0*Tensor<0,dim,double>(E_strain[j][j]))/n_q_points;
+                      seepage_velocity_elements[j][cell->active_cell_index()]
+                        +=  Tensor<0,dim,double>(seepage_vel_AD[j])/n_q_points;
+                  }
+
+                  porous_dissipation_elements[cell->active_cell_index()]
+                    +=  porous_dissipation/n_q_points;
+                  viscous_dissipation_elements[cell->active_cell_index()]
+                    +=  viscous_dissipation/n_q_points;
+                  solid_vol_fraction_elements[cell->active_cell_index()]
+                    +=  solid_vol_fraction/n_q_points;
+
+                  growth_stretch_elements[cell->active_cell_index()]
+                    += growth_stretch/n_q_points;
+
+                  cauchy_stresses_total_elements[3][cell->active_cell_index()]
+                    += ((sigma * basis_vectors[0])* basis_vectors[1])/n_q_points;
+                  cauchy_stresses_total_elements[4][cell->active_cell_index()]
+                    += ((sigma * basis_vectors[0])* basis_vectors[2])/n_q_points;
+
+                  cauchy_stresses_E_elements[3][cell->active_cell_index()]
+                    += ((sigma_E * basis_vectors[0])* basis_vectors[1])/n_q_points;
+                  cauchy_stresses_E_elements[4][cell->active_cell_index()]
+                    += ((sigma_E * basis_vectors[0])* basis_vectors[2])/n_q_points;
+
+                  cauchy_stresses_p_elements[3][cell->active_cell_index()]
+                    += ((sigma_fluid_vol * basis_vectors[0])* basis_vectors[1])/n_q_points;
+                  cauchy_stresses_p_elements[4][cell->active_cell_index()]
+                    += ((sigma_fluid_vol * basis_vectors[0])* basis_vectors[2])/n_q_points;
+              }
+              // OUTPUT AVERAGED ON NODES -------------------------------------------
+              else if (parameters.outtype == "nodes")
+              {
+                  //For-loop to calculate stress components at each node
+                  for (unsigned int j=0; j<(dofs_per_cell); ++j)
+                  {
+                      //Return for DOF "j" the number (type) of the base element (u or p) it is
+                      const unsigned int j_group = fe.system_to_base_index(j).first.first;
+
+                      //For DOF belonging to displacement variables, select only first component
+                      if (j_group == u_block)
+                      {
+                          const unsigned int u_component = fe.system_to_component_index(j).first;
+                          if (u_component == first_u_component)
+                          {
+                            double  Nj= fe_values_ref.shape_value(j, q_point);
+
+                            for (unsigned int k=0; k<(dofs_per_cell); k++)
+                            {
+                                  if (fe.system_to_component_index(j).first ==
+                                      fe.system_to_component_index(k).first    )
+                                  {
+                                      double Nk = fe_values_ref.shape_value(k, q_point);
+                                      mass_matrix_postprocessing(local_dof_indices[j])
+                                        += (Nj * Nk * JxW);
+                                  }
+                            }
+
+                            for (unsigned int k=0; k<dim; ++k)
+                            {
+                                cauchy_stresses_total_nodes[k][local_dof_indices[j]]
+                                  += Nj*((sigma * basis_vectors[k])* basis_vectors[k])*JxW;
+                            }
+                            cauchy_stresses_total_nodes[3][local_dof_indices[j]]
+                              += Nj*((sigma * basis_vectors[0])* basis_vectors[1])*JxW; //sig_xy
+                            cauchy_stresses_total_nodes[4][local_dof_indices[j]]
+                              += Nj*((sigma * basis_vectors[0])* basis_vectors[2])*JxW;//sig_xz
+                            cauchy_stresses_total_nodes[5][local_dof_indices[j]]
+                              += Nj*((sigma * basis_vectors[1])* basis_vectors[2])*JxW; //sig_yz
+                          }
+                      }
+                  }
+              }
+            //---------------------------------------------------------------
+          } //end gauss point loop
+      }//end cell loop
+
+      // Add the results to the solution to create the output file for Paraview
+      FilteredDataOut<dim> data_out(this_mpi_process);
+      std::vector<DataComponentInterpretation::DataComponentInterpretation>
+        data_component_interpretation(dim,
+                                      DataComponentInterpretation::component_is_part_of_vector);
+      data_component_interpretation.push_back(DataComponentInterpretation::component_is_scalar);
+
+      GridTools::get_subdomain_association (triangulation, partition_int);
+
+      std::vector<std::string> solution_name(dim, "displacement");
+      solution_name.push_back("pore_pressure");
+
+      data_out.attach_dof_handler(dof_handler_ref);
+      data_out.add_data_vector(solution_total,
+                               solution_name,
+                               DataOut<dim>::type_dof_data,
+                               data_component_interpretation);
+
+      data_out.add_data_vector (solution_total,
+                                gradient_postprocessor);
+
+    //Example using DataPostprocessorTensor to compute infinitesimal strains, copied from:
+    // https://www.dealii.org/developer/doxygen/deal.II/classDataPostprocessorTensor.html
+    //            data_out.add_data_vector (solution_total,
+    //                                      strain_postprocessor);
+
+    //            data_out.add_data_vector (solution_total,
+    //                                      stress_postprocessor);
+
+      const Vector<double> partitioning(partition_int.begin(),
+                                        partition_int.end());
+
+      data_out.add_data_vector (partitioning, "partitioning");
+      data_out.add_data_vector (material_id, "material_id");
+
+      // Integration point results -----------------------------------------------------------
+      if (parameters.outtype == "elements")
+      {
+        data_out.add_data_vector (cauchy_stresses_total_elements[0], "sigma_total_xx");
+        data_out.add_data_vector (cauchy_stresses_total_elements[1], "sigma_total_yy");
+        data_out.add_data_vector (cauchy_stresses_total_elements[2], "sigma_total_zz");
+        data_out.add_data_vector (cauchy_stresses_total_elements[3], "sigma_total_xy");
+        data_out.add_data_vector (cauchy_stresses_total_elements[4], "sigma_total_xz");
+        data_out.add_data_vector (cauchy_stresses_total_elements[5], "sigma_total_yz");
+
+        data_out.add_data_vector (cauchy_stresses_E_elements[0], "sigma_extra_xx");
+        data_out.add_data_vector (cauchy_stresses_E_elements[1], "sigma_extra_yy");
+        data_out.add_data_vector (cauchy_stresses_E_elements[2], "sigma_extra_zz");
+        data_out.add_data_vector (cauchy_stresses_E_elements[3], "sigma_extra_xy");
+        data_out.add_data_vector (cauchy_stresses_E_elements[4], "sigma_extra_xz");
+        data_out.add_data_vector (cauchy_stresses_E_elements[5], "sigma_extra_yz");
+
+        data_out.add_data_vector (cauchy_stresses_p_elements[0], "sigma_pressure_xx");
+        data_out.add_data_vector (cauchy_stresses_p_elements[1], "sigma_pressure_yy");
+        data_out.add_data_vector (cauchy_stresses_p_elements[2], "sigma_pressure_zz");
+        data_out.add_data_vector (cauchy_stresses_p_elements[3], "sigma_pressure_xy");
+        data_out.add_data_vector (cauchy_stresses_p_elements[4], "sigma_pressure_xz");
+        data_out.add_data_vector (cauchy_stresses_p_elements[5], "sigma_pressure_yz");
+
+        data_out.add_data_vector (stretches_elements[0], "stretch_xx");
+        data_out.add_data_vector (stretches_elements[1], "stretch_yy");
+        data_out.add_data_vector (stretches_elements[2], "stretch_zz");
+
+        data_out.add_data_vector (growth_stretch_elements, "growth_stretch");
+      }
+      else if  (parameters.outtype == "nodes")
+      {
+        for (unsigned int i = 0; i < mass_matrix_postprocessing.size(); ++i)
+            mass_matrix_postprocessing(i) = 1 / mass_matrix_postprocessing(i);
+
+        for (unsigned int i=0; i<num_comp_symm_tensor; ++i)
+            cauchy_stresses_total_nodes[i].scale(mass_matrix_postprocessing);
+
+    /*
+        data_out.add_data_vector (cauchy_stresses_total_nodes[0], result_cauchy_xx);
+        data_out.add_data_vector (cauchy_stresses_total_nodes[1], result_cauchy_yy);
+        data_out.add_data_vector (cauchy_stresses_total_nodes[2], result_cauchy_zz);
+        data_out.add_data_vector (cauchy_stresses_total_nodes[3], result_cauchy_xy);
+        data_out.add_data_vector (cauchy_stresses_total_nodes[4], result_cauchy_xz);
+        data_out.add_data_vector (cauchy_stresses_total_nodes[5], result_cauchy_yz);
+    */
+        data_out.add_data_vector (cauchy_stresses_total_nodes[0], "cauchy_xx");
+    //    data_out.add_data_vector (cauchy_stresses_total_nodes[1], "cauchy_yy");
+    //    data_out.add_data_vector (cauchy_stresses_total_nodes[2], "cauchy_zz");
+    //    data_out.add_data_vector (cauchy_stresses_total_nodes[3], "cauchy_xy");
+    //    data_out.add_data_vector (cauchy_stresses_total_nodes[4], "cauchy_xz");
+    //    data_out.add_data_vector (cauchy_stresses_total_nodes[5], "cauchy_yz");
+      }
+    //---------------------------------------------------------------------
+
+      data_out.build_patches(degree_displ);
+      struct Filename
+      {
+        static std::string get_filename_vtu (unsigned int process,
+                                             unsigned int timestep,
+                                             const unsigned int n_digits = 5)
+        {
+          std::ostringstream filename_vtu;
+          filename_vtu
+          << "solution."
+          << Utilities::int_to_string (process, n_digits)
+          << "."
+          << Utilities::int_to_string(timestep, n_digits)
+          << ".vtu";
+          return filename_vtu.str();
+        }
+
+        static std::string get_filename_pvtu (unsigned int timestep,
+                                              const unsigned int n_digits = 5)
+        {
+          std::ostringstream filename_vtu;
+          filename_vtu
+          << "solution."
+          << Utilities::int_to_string(timestep, n_digits)
+          << ".pvtu";
+          return filename_vtu.str();
+        }
+
+        static std::string get_filename_pvd (void)
+        {
+          std::ostringstream filename_vtu;
+          filename_vtu
+          << "solution.pvd";
+          return filename_vtu.str();
+        }
+      };
+
+      const std::string filename_vtu = Filename::get_filename_vtu(this_mpi_process, timestep);
+      std::ofstream output(filename_vtu.c_str());
+      data_out.write_vtu(output);
+
+      // We have a collection of files written in parallel
+      // This next set of steps should only be performed by master process
+      if (this_mpi_process == 0)
+      {
+        // List of all files written out at this timestep by all processors
+        std::vector<std::string> parallel_filenames_vtu;
+        for (unsigned int p=0; p < n_mpi_processes; ++p)
+        {
+          parallel_filenames_vtu.push_back(Filename::get_filename_vtu(p, timestep));
+        }
+
+        const std::string filename_pvtu (Filename::get_filename_pvtu(timestep));
+        std::ofstream pvtu_master(filename_pvtu.c_str());
+        data_out.write_pvtu_record(pvtu_master,
+                                   parallel_filenames_vtu);
+
+        // Time dependent data master file
+        static std::vector<std::pair<double,std::string> > time_and_name_history;
+        time_and_name_history.push_back (std::make_pair (current_time,
+                                                         filename_pvtu));
+        const std::string filename_pvd (Filename::get_filename_pvd());
+        std::ofstream pvd_output (filename_pvd.c_str());
+        DataOutBase::write_pvd_record (pvd_output, time_and_name_history);
+      }
+    }
+
+    //Print results to plotting file
+    template <int dim>
+    void Solid<dim>::output_results_to_plot(const unsigned int timestep,
+                                            const double current_time,
+                                            TrilinosWrappers::MPI::BlockVector solution_IN,
+                                            std::vector<Point<dim> > &tracked_vertices_IN,
+                                            std::ofstream &plotpointfile) const
+    {
+      TrilinosWrappers::MPI::BlockVector solution_total ( locally_owned_partitioning,
+                                                          locally_relevant_partitioning,
+                                                          mpi_communicator,
+                                                          false);
+
+      (void) timestep;
+      solution_total = solution_IN;
+      Vector<double> material_id;
+      Vector<double> polynomial_order;
+      material_id.reinit(triangulation.n_active_cells());
+      polynomial_order.reinit(triangulation.n_active_cells());
+      std::vector<types::subdomain_id> partition_int (triangulation.n_active_cells());
+
+      //Variables needed to print the solution file for plotting
+      Point<dim> reaction_force;
+      Point<dim> reaction_force_pressure;
+      Point<dim> reaction_force_extra;
+      double total_fluid_flow = 0.0;
+      double total_porous_dissipation = 0.0;
+      double total_viscous_dissipation = 0.0;
+      double total_solid_vol = 0.0;
+      double total_vol_current = 0.0;
+      double total_vol_reference = 0.0;
+      std::vector<Point<dim+1>> solution_vertices(tracked_vertices_IN.size());
+
+      //Auxiliar variables needed for mpi processing
+      Tensor<1, dim> sum_reaction_mpi;
+      Tensor<1, dim> sum_reaction_pressure_mpi;
+      Tensor<1, dim> sum_reaction_extra_mpi;
+      sum_reaction_mpi = 0.0;
+      sum_reaction_pressure_mpi = 0.0;
+      sum_reaction_extra_mpi = 0.0;
+      double sum_total_flow_mpi = 0.0;
+      double sum_porous_dissipation_mpi = 0.0;
+      double sum_viscous_dissipation_mpi = 0.0;
+      double sum_solid_vol_mpi = 0.0;
+      double sum_vol_current_mpi = 0.0;
+      double sum_vol_reference_mpi = 0.0;
+
+      //Declare an instance of the material class object
+      if (parameters.mat_type == "Neo-Hooke")
+          NeoHooke<dim, ADNumberType> material( parameters.solid_vol_frac,
+                                                parameters.lambda,
+                                                parameters.growth_type,
+                                                parameters.growth_rate,
+                                                parameters.growth_exponential,
+                                                time,
+                                                parameters.eigen_solver,
+                                                parameters.mu );
+      else if (parameters.mat_type == "Ogden")
+          Ogden<dim, ADNumberType> material( parameters.solid_vol_frac,
+                                             parameters.lambda,
+                                             parameters.growth_type,
+                                             parameters.growth_rate,
+                                             parameters.growth_exponential,
+                                             time,
+                                             parameters.eigen_solver,
+                                             parameters.mu1_infty,
+                                             parameters.mu2_infty,
+                                             parameters.mu3_infty,
+                                             parameters.alpha1_infty,
+                                             parameters.alpha2_infty,
+                                             parameters.alpha3_infty );
+      else if (parameters.mat_type == "visco-Ogden")
+          visco_Ogden <dim, ADNumberType>material( parameters.solid_vol_frac,
+                                                   parameters.lambda,
+                                                   parameters.growth_type,
+                                                   parameters.growth_rate,
+                                                   parameters.growth_exponential,
+                                                   time,
+                                                   parameters.eigen_solver,
+                                                   parameters.mu1_infty,
+                                                   parameters.mu2_infty,
+                                                   parameters.mu3_infty,
+                                                   parameters.alpha1_infty,
+                                                   parameters.alpha2_infty,
+                                                   parameters.alpha3_infty,
+                                                   parameters.mu1_mode_1,
+                                                   parameters.mu2_mode_1,
+                                                   parameters.mu3_mode_1,
+                                                   parameters.alpha1_mode_1,
+                                                   parameters.alpha2_mode_1,
+                                                   parameters.alpha3_mode_1,
+                                                   parameters.viscosity_mode_1);
+      else
+          Assert (false, ExcMessage("Material type not implemented"));
+
+      //Define a local instance of FEValues to compute updated values required to calculate stresses
+      const UpdateFlags uf_cell(update_values | update_gradients | update_JxW_values);
+      FEValues<dim> fe_values_ref (fe, qf_cell, uf_cell);
+
+      //Iterate through elements (cells) and Gauss Points
+      FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+        cell (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.begin_active()),
+        endc (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.end());
+      //start cell loop
+      for (; cell!=endc; ++cell)
+      {
+
+          if (cell->subdomain_id() != this_mpi_process) continue;
+          material_id(cell->active_cell_index()) = static_cast<int>(cell->material_id());
+
+          fe_values_ref.reinit(cell);
+
+          std::vector<Tensor<2,dim> > solution_grads_u(n_q_points);
+          fe_values_ref[u_fe].get_function_gradients(solution_total,solution_grads_u);
+
+          std::vector< double > solution_values_p_fluid_total(n_q_points);
+          fe_values_ref[p_fluid_fe].get_function_values(solution_total,solution_values_p_fluid_total);
+
+          std::vector<Tensor<1,dim > > solution_grads_p_fluid_AD (n_q_points);
+          fe_values_ref[p_fluid_fe].get_function_gradients(solution_total, solution_grads_p_fluid_AD);
+
+          //start gauss point loop
+          for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
+          {
+              const Tensor<2, dim, ADNumberType>
+                F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u[q_point]);
+              ADNumberType det_F_AD = determinant(F_AD);
+              const double det_F = Tensor<0,dim,double>(det_F_AD);
+
+              const std::vector<std::shared_ptr<const PointHistory<dim, ADNumberType> > >
+                  lqph = quadrature_point_history.get_data(cell);
+              Assert(lqph.size() == n_q_points, ExcInternalError());
+
+              double JxW = fe_values_ref.JxW(q_point);
+
+              const Tensor<2, dim> Fg = lqph[q_point]->get_non_converged_growth_tensor();
+              const double det_Fg = determinant(Fg);
+
+              //Volumes
+              sum_vol_current_mpi  += det_F * JxW;
+              sum_vol_reference_mpi += JxW;
+              sum_solid_vol_mpi += parameters.solid_vol_frac * JxW * det_Fg;
+
+              //Seepage velocity
+              const Tensor<2, dim, ADNumberType> F_inv = invert(F_AD);
+              const Tensor<1,dim, ADNumberType >
+                grad_p_fluid_AD =  solution_grads_p_fluid_AD[q_point]*F_inv;
+              const Tensor<1, dim, ADNumberType>
+                seepage_vel_AD = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p_fluid_AD);
+
+              //Dissipations
+              const double porous_dissipation =
+                lqph[q_point]->get_porous_dissipation(F_AD, grad_p_fluid_AD);
+              sum_porous_dissipation_mpi += porous_dissipation * det_F * JxW;
+
+              const double viscous_dissipation = lqph[q_point]->get_viscous_dissipation();
+              sum_viscous_dissipation_mpi += viscous_dissipation * det_F * JxW;
+
+            //---------------------------------------------------------------
+          } //end gauss point loop
+
+          // Compute reaction force on load boundary & total fluid flow across drained boundary
+          // Define a local instance of FEFaceValues to compute values required to calculate reaction force
+          const UpdateFlags uf_face( update_values | update_gradients |
+                                     update_normal_vectors | update_JxW_values );
+          FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
+
+          //start face loop
+          for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+          {
+              //Reaction force
+              if (cell->face(face)->at_boundary() == true &&
+                  cell->face(face)->boundary_id() == get_reaction_boundary_id_for_output())
+              {
+                  fe_face_values_ref.reinit(cell, face);
+
+                  //Get displacement gradients for current face
+                  std::vector<Tensor<2,dim> > solution_grads_u_f(n_q_points_f);
+                  fe_face_values_ref[u_fe].get_function_gradients(solution_total,
+                                                                  solution_grads_u_f);
+
+                  //Get pressure for current element
+                  std::vector< double > solution_values_p_fluid_total_f(n_q_points_f);
+                  fe_face_values_ref[p_fluid_fe].get_function_values(solution_total,
+                                                                     solution_values_p_fluid_total_f);
+
+                  //start gauss points on faces loop
+                  for (unsigned int f_q_point = 0; f_q_point < n_q_points_f; ++f_q_point)
+                  {
+                      const Tensor<1, dim> &N = fe_face_values_ref.normal_vector(f_q_point);
+                      const double JxW_f = fe_face_values_ref.JxW(f_q_point);
+
+                      //Compute deformation gradient from displacements gradient (present configuration)
+                      const Tensor<2, dim, ADNumberType> F_AD =
+                        Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
+
+                      const std::vector<std::shared_ptr<const PointHistory<dim, ADNumberType>>>
+                          lqph = quadrature_point_history.get_data(cell);
+                      Assert(lqph.size() == n_q_points, ExcInternalError());
+
+                      const double p_fluid = solution_values_p_fluid_total[f_q_point];
+
+                      //Cauchy stress
+                      static const SymmetricTensor< 2, dim, double>
+                        I (Physics::Elasticity::StandardTensors<dim>::I);
+                      SymmetricTensor<2, dim> sigma_E;
+                      const SymmetricTensor<2, dim, ADNumberType> sigma_E_AD =
+                        lqph[f_q_point]->get_Cauchy_E(F_AD);
+
+                      for (unsigned int i=0; i<dim; ++i)
+                          for (unsigned int j=0; j<dim; ++j)
+                          {
+                             sigma_E[i][j] = Tensor<0,dim,double>(sigma_E_AD[i][j]);
+                          }
+
+                      SymmetricTensor<2, dim> sigma_fluid_vol (I);
+                      sigma_fluid_vol *= -1.0*p_fluid;
+                      const SymmetricTensor<2, dim> sigma = sigma_E + sigma_fluid_vol;
+                      sum_reaction_mpi += sigma * N * JxW_f;
+                      sum_reaction_pressure_mpi += sigma_fluid_vol * N * JxW_f;
+                      sum_reaction_extra_mpi += sigma_E * N * JxW_f;
+                  }//end gauss points on faces loop
               }
 
-              static std::string get_filename_pvtu (unsigned int timestep,
-                                                    const unsigned int n_digits = 5)
+              //Fluid flow
+              if (cell->face(face)->at_boundary() == true &&
+                 ( cell->face(face)->boundary_id() == get_drained_boundary_id_for_output().first ||
+                   cell->face(face)->boundary_id() == get_drained_boundary_id_for_output().second ) )
               {
-                std::ostringstream filename_vtu;
-                filename_vtu
-                << "solution."
-                << Utilities::int_to_string(timestep, n_digits)
-                << ".pvtu";
-                return filename_vtu.str();
-              }
+                  fe_face_values_ref.reinit(cell, face);
 
-              static std::string get_filename_pvd (void)
+                  //Get displacement gradients for current face
+                  std::vector<Tensor<2,dim> > solution_grads_u_f(n_q_points_f);
+                  fe_face_values_ref[u_fe].get_function_gradients(solution_total,solution_grads_u_f);
+
+                  //Get pressure gradients for current face
+                  std::vector<Tensor<1,dim> > solution_grads_p_f(n_q_points_f);
+                  fe_face_values_ref[p_fluid_fe].get_function_gradients(solution_total,solution_grads_p_f);
+
+                  //start gauss points on faces loop
+                  for (unsigned int f_q_point = 0; f_q_point < n_q_points_f; ++f_q_point)
+                  {
+                      const Tensor<1, dim> &N = fe_face_values_ref.normal_vector(f_q_point);
+                      const double JxW_f = fe_face_values_ref.JxW(f_q_point);
+
+                      //Deformation gradient and inverse from displacements gradient (present configuration)
+                      const Tensor<2, dim, ADNumberType> F_AD = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
+
+                      const Tensor<2, dim, ADNumberType> F_inv_AD = invert(F_AD);
+                      ADNumberType det_F_AD = determinant(F_AD);
+
+                      const std::vector<std::shared_ptr<const PointHistory<dim, ADNumberType> > >
+                          lqph = quadrature_point_history.get_data(cell);
+                      Assert(lqph.size() == n_q_points, ExcInternalError());
+
+                      //Seepage velocity
+                      Tensor<1, dim> seepage;
+                      double det_F = Tensor<0,dim,double>(det_F_AD);
+                      const Tensor<1, dim, ADNumberType> grad_p = solution_grads_p_f[f_q_point]*F_inv_AD;
+                      const Tensor<1, dim, ADNumberType> seepage_AD
+                             = lqph[f_q_point]->get_seepage_velocity_current(F_AD, grad_p);
+
+                      for (unsigned int i=0; i<dim; ++i)
+                          seepage[i] = Tensor<0,dim,double>(seepage_AD[i]);
+
+                      sum_total_flow_mpi += (seepage/det_F) * N * JxW_f;
+                  }//end gauss points on faces loop
+              }
+          }//end face loop
+      }//end cell loop
+
+      //Sum the results from different MPI process and then add to the reaction_force vector
+      //In theory, the solution on each surface (each cell) only exists in one MPI process
+      //so, we add all MPI process, one will have the solution and the others will be zero
+      for (unsigned int d=0; d<dim; ++d)
+      {
+          reaction_force[d] = Utilities::MPI::sum(sum_reaction_mpi[d], mpi_communicator);
+          reaction_force_pressure[d] = Utilities::MPI::sum(sum_reaction_pressure_mpi[d], mpi_communicator);
+          reaction_force_extra[d] = Utilities::MPI::sum(sum_reaction_extra_mpi[d], mpi_communicator);
+      }
+
+      //Same for total fluid flow, and for porous and viscous dissipations
+      total_fluid_flow = Utilities::MPI::sum(sum_total_flow_mpi, mpi_communicator);
+      total_porous_dissipation = Utilities::MPI::sum(sum_porous_dissipation_mpi, mpi_communicator);
+      total_viscous_dissipation = Utilities::MPI::sum(sum_viscous_dissipation_mpi, mpi_communicator);
+      total_solid_vol = Utilities::MPI::sum(sum_solid_vol_mpi, mpi_communicator);
+      total_vol_current = Utilities::MPI::sum(sum_vol_current_mpi, mpi_communicator);
+      total_vol_reference = Utilities::MPI::sum(sum_vol_reference_mpi, mpi_communicator);
+
+  //  Extract solution for tracked vectors
+  // Copying an MPI::BlockVector into MPI::Vector is not possible, so we copy each block of MPI::BlockVector into an MPI::Vector
+  // And then we copy the MPI::Vector into "normal" Vectors
+      TrilinosWrappers::MPI::Vector solution_vector_u_MPI(solution_total.block(u_block));
+      TrilinosWrappers::MPI::Vector solution_vector_p_MPI(solution_total.block(p_fluid_block));
+      Vector<double> solution_u_vector(solution_vector_u_MPI);
+      Vector<double> solution_p_vector(solution_vector_p_MPI);
+
+      if (this_mpi_process == 0)
+      {
+          //Append the pressure solution vector to the displacement solution vector,
+          //creating a single solution vector equivalent to the original BlockVector
+          //so FEFieldFunction will work with the dof_handler_ref.
+          Vector<double> solution_vector(solution_p_vector.size()+solution_u_vector.size());
+
+          for (unsigned int d=0; d<(solution_u_vector.size()); ++d)
+              solution_vector[d] = solution_u_vector[d];
+
+          for (unsigned int d=0; d<(solution_p_vector.size()); ++d)
+              solution_vector[solution_u_vector.size()+d] = solution_p_vector[d];
+
+          Functions::FEFieldFunction<dim,DoFHandler<dim>,Vector<double>>
+          find_solution(dof_handler_ref, solution_vector);
+
+          for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
+          {
+              Vector<double> update(dim+1);
+              Point<dim> pt_ref;
+
+              pt_ref[0]= tracked_vertices_IN[p][0];
+              pt_ref[1]= tracked_vertices_IN[p][1];
+              pt_ref[2]= tracked_vertices_IN[p][2];
+
+             find_solution.vector_value(pt_ref, update);
+
+             for (unsigned int d=0; d<(dim+1); ++d)
+             {
+                 //For values close to zero, set to 0.0
+                 if ( abs(update[d]) < 1.5*parameters.tol_u )
+                     update[d] = 0.0;
+                 solution_vertices[p][d] = update[d];
+             }
+          }
+  // Write the results to the plotting file.
+  // Add two blank lines between cycles in the cyclic loading examples so GNUPLOT can detect each cycle as a different block
+          if (( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
+                (parameters.geom_type == "Budday_cube_tension_compression")||
+                (parameters.geom_type == "Budday_cube_shear_fully_fixed")                  ) &&
+              ( (abs(current_time - parameters.end_time/3.)    < 0.9*parameters.delta_t)||
+                (abs(current_time - 2.*parameters.end_time/3.) < 0.9*parameters.delta_t)   ) &&
+                parameters.num_cycle_sets == 1 )
+          {
+              plotpointfile << std::endl<< std::endl;
+          }
+          if (( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
+                (parameters.geom_type == "Budday_cube_tension_compression")||
+                (parameters.geom_type == "Budday_cube_shear_fully_fixed")             ) &&
+              ( (abs(current_time - parameters.end_time/9.)    < 0.9*parameters.delta_t)||
+                (abs(current_time - 2.*parameters.end_time/9.) < 0.9*parameters.delta_t)||
+                (abs(current_time - 3.*parameters.end_time/9.) < 0.9*parameters.delta_t)||
+                (abs(current_time - 5.*parameters.end_time/9.) < 0.9*parameters.delta_t)||
+                (abs(current_time - 7.*parameters.end_time/9.) < 0.9*parameters.delta_t) ) &&
+                parameters.num_cycle_sets == 2 )
+          {
+              plotpointfile << std::endl<< std::endl;
+          }
+
+          plotpointfile <<  std::setprecision(6) << std::scientific;
+          plotpointfile << std::setw(16) << current_time        << ","
+                        << std::setw(15) << total_vol_reference << ","
+                        << std::setw(15) << total_vol_current   << ","
+                        << std::setw(15) << total_solid_vol     << ",";
+
+          if (current_time == 0.0)
+          {
+              for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
               {
-                std::ostringstream filename_vtu;
-                filename_vtu
-                << "solution.pvd";
-                return filename_vtu.str();
+                  for (unsigned int d=0; d<dim; ++d)
+                      plotpointfile << std::setw(15) << 0.0 << ",";
+
+                  plotpointfile << std::setw(15) << parameters.drained_pressure << ",";
               }
-            };
+              for (unsigned int d=0; d<(3*dim+2); ++d)
+                  plotpointfile << std::setw(15) << 0.0 << ",";
 
-            const std::string filename_vtu = Filename::get_filename_vtu(this_mpi_process, timestep);
-            std::ofstream output(filename_vtu.c_str());
-            data_out.write_vtu(output);
+              plotpointfile << std::setw(15) << 0.0;
+          }
+          else
+          {
+              for (unsigned int p=0; p<tracked_vertices_IN.size(); ++p)
+                  for (unsigned int d=0; d<(dim+1); ++d)
+                      plotpointfile << std::setw(15) << solution_vertices[p][d]<< ",";
 
-            // We have a collection of files written in parallel
-            // This next set of steps should only be performed by master process
-            if (this_mpi_process == 0)
-            {
-              // List of all files written out at this timestep by all processors
-              std::vector<std::string> parallel_filenames_vtu;
-              for (unsigned int p=0; p < n_mpi_processes; ++p)
-              {
-                parallel_filenames_vtu.push_back(Filename::get_filename_vtu(p, timestep));
-              }
+              for (unsigned int d=0; d<dim; ++d)
+                  plotpointfile << std::setw(15) << reaction_force[d] << ",";
 
-              const std::string filename_pvtu (Filename::get_filename_pvtu(timestep));
-              std::ofstream pvtu_master(filename_pvtu.c_str());
-              data_out.write_pvtu_record(pvtu_master,
-                                         parallel_filenames_vtu);
+              for (unsigned int d=0; d<dim; ++d)
+                  plotpointfile << std::setw(15) << reaction_force_pressure[d] << ",";
 
-              // Time dependent data master file
-              static std::vector<std::pair<double,std::string> > time_and_name_history;
-              time_and_name_history.push_back (std::make_pair (current_time,
-                                                               filename_pvtu));
-              const std::string filename_pvd (Filename::get_filename_pvd());
-              std::ofstream pvd_output (filename_pvd.c_str());
-              DataOutBase::write_pvd_record (pvd_output, time_and_name_history);
-            }
+              for (unsigned int d=0; d<dim; ++d)
+                  plotpointfile << std::setw(15) << reaction_force_extra[d] << ",";
+
+              plotpointfile << std::setw(15) << total_fluid_flow << ","
+                            << std::setw(15) << total_porous_dissipation<< ","
+                            << std::setw(15) << total_viscous_dissipation;
+          }
+          plotpointfile << std::endl;
+      }
     }
 
     //Header for console output file

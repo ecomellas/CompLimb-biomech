@@ -119,10 +119,10 @@ subsection Material properties
   # ===== Pressure-driven growth only =====
 
   # Growth rate
-  set growth_rate_pressure = 1.0e-6
+  set growth_rate_pressure = 5.0e-6
   
   # Nature of the dependency of growth on pressure (linear, quadratic, etc.)
-  set growth_exponential_pressure = 1.0
+  set growth_exponential_pressure = 2.0
   
   
   # ------------------------ FLUID ----------------------------------
@@ -206,4 +206,7 @@ end
 subsection Output parameters
   # Output data every given time step number
   set Time step number output    = 1
+  
+  # Output data associated with integration point values averaged on elements or on nodes
+  set Averaged results           = elements
 end
