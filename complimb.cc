@@ -3026,6 +3026,46 @@ namespace CompLimb
           const unsigned int subdomain_id;
     };
 
+    //Class to be able to output results correctly when using Paraview
+    template<int dim, class DH=DoFHandler<dim> >
+    class FilteredDataOutFaces : public DataOutFaces<dim, DH>
+    {
+        public:
+          FilteredDataOutFaces (const unsigned int subdomain_id)
+            :
+            subdomain_id (subdomain_id)
+          {}
+
+          virtual ~FilteredDataOutFaces() {}
+
+          virtual typename DataOutFaces<dim, DH>::cell_iterator
+          first_cell ()
+          {
+            typename DataOutFaces<dim, DH>::active_cell_iterator
+            cell = this->dofs->begin_active();
+            while ((cell != this->dofs->end()) && (cell->subdomain_id() != subdomain_id))
+              ++cell;
+            return cell;
+          }
+
+          virtual typename DataOutFaces<dim, DH>::cell_iterator
+          next_cell (const typename DataOutFaces<dim, DH>::cell_iterator &old_cell)
+          {
+            if (old_cell != this->dofs->end())
+              {
+                const IteratorFilters::SubdomainEqualTo predicate(subdomain_id);
+                return
+                  ++(FilteredIterator<typename DataOutFaces<dim, DH>::active_cell_iterator>
+                     (predicate,old_cell));
+              }
+            else
+              return old_cell;
+          }
+
+        private:
+          const unsigned int subdomain_id;
+    };
+
     //Class to compute gradient of the pressure
     template <int dim>
     class GradientPostprocessor : public DataPostprocessorVector<dim>
@@ -3737,8 +3777,9 @@ namespace CompLimb
           } //end gauss point loop
       }//end cell loop
 
-      // Data on faces
-      DataOutFaces<dim> data_out_face(true); //Should maje FilteredDataOutFaces class!!!
+      //DataOutFaces<dim> data_out_face(true); //Should make FilteredDataOutFaces class!!!
+      FilteredDataOutFaces<dim> data_out_face(this_mpi_process);
+
       //std::vector<std::string> face_name(1,"loading");
       std::vector<DataComponentInterpretation::DataComponentInterpretation>
         face_component_type(dim,
