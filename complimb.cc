@@ -76,6 +76,7 @@
 
 #include <deal.II/numerics/data_postprocessor.h>
 #include <deal.II/numerics/data_out.h>
+#include <deal.II/numerics/data_out_faces.h>
 #include <deal.II/numerics/fe_field_function.h>
 #include <deal.II/numerics/vector_tools.h>
 
@@ -1777,6 +1778,9 @@ namespace CompLimb
             void output_results_to_vtu( const unsigned int timestep,
                                         const double current_time,
                                         TrilinosWrappers::MPI::BlockVector solution) const;
+            void output_loading_to_vtu( const unsigned int timestep,
+                                        const double current_time,
+                                        TrilinosWrappers::MPI::BlockVector solution) const;
             void output_results_to_plot( const unsigned int timestep,
                                          const double current_time,
                                          TrilinosWrappers::MPI::BlockVector solution,
@@ -2020,6 +2024,9 @@ namespace CompLimb
           output_results_to_vtu( time.get_timestep(),
                                  time.get_current(),
                                  solution_n           );
+          output_loading_to_vtu( time.get_timestep(),
+                                 time.get_current(),
+                                 solution_n           );
           output_results_to_plot( time.get_timestep(),
                                   time.get_current(),
                                   solution_n,
@@ -2061,6 +2068,9 @@ namespace CompLimb
               if ( ( time.get_timestep() % parameters.timestep_output ) == 0 )
               {
                 output_results_to_vtu( time.get_timestep(),
+                                       time.get_current(),
+                                       solution_n           );
+                output_loading_to_vtu( time.get_timestep(),
                                        time.get_current(),
                                        solution_n           );
                 output_results_to_plot( time.get_timestep(),
@@ -3314,13 +3324,13 @@ namespace CompLimb
 
           fe_values_ref.reinit(cell);
 
-          std::vector<Tensor<2,dim> > solution_grads_u(n_q_points);
+          std::vector<Tensor<2,dim>> solution_grads_u(n_q_points);
           fe_values_ref[u_fe].get_function_gradients(solution_total,solution_grads_u);
 
-          std::vector< double > solution_values_p_fluid_total(n_q_points);
+          std::vector<double> solution_values_p_fluid_total(n_q_points);
           fe_values_ref[p_fluid_fe].get_function_values(solution_total,solution_values_p_fluid_total);
 
-          std::vector<Tensor<1,dim > > solution_grads_p_fluid_AD (n_q_points);
+          std::vector<Tensor<1,dim>> solution_grads_p_fluid_AD (n_q_points);
           fe_values_ref[p_fluid_fe].get_function_gradients(solution_total, solution_grads_p_fluid_AD);
 
           // OUTPUT AVERAGED ON NODES ----------------------------------------------
@@ -3364,7 +3374,7 @@ namespace CompLimb
 
               //Green-Lagrange strain
               const Tensor<2, dim> E_strain = 0.5 * (transpose(F_AD)*F_AD - I);
-                                   
+
               //Seepage velocity
               const Tensor<2, dim, ADNumberType> F_inv = invert(F_AD);
               const Tensor<1,dim, ADNumberType >
@@ -3562,6 +3572,7 @@ namespace CompLimb
     //---------------------------------------------------------------------
 
       data_out.build_patches(degree_displ);
+
       struct Filename
       {
         static std::string get_filename_vtu (unsigned int process,
@@ -3627,7 +3638,197 @@ namespace CompLimb
         DataOutBase::write_pvd_record (pvd_output, time_and_name_history);
       }
     }
+    //Print results to vtu file
+    template <int dim>
+    void Solid<dim>::output_loading_to_vtu(const unsigned int timestep,
+                                           const double current_time,
+                                           TrilinosWrappers::MPI::BlockVector solution_IN) const
+    {
+      TrilinosWrappers::MPI::BlockVector solution_total ( locally_owned_partitioning,
+                                                          locally_relevant_partitioning,
+                                                          mpi_communicator,
+                                                          false);
+      solution_total = solution_IN;
+      Vector<double> material_id;
+      Vector<double> polynomial_order;
+      material_id.reinit(triangulation.n_active_cells());
+      polynomial_order.reinit(triangulation.n_active_cells());
 
+      //Declare an instance of the material class object
+      if (parameters.mat_type == "Neo-Hooke")
+          NeoHooke<dim, ADNumberType> material( parameters.solid_vol_frac,
+                                                parameters.lambda,
+                                                parameters.growth_type,
+                                                parameters.growth_rate,
+                                                parameters.growth_exponential,
+                                                time,
+                                                parameters.eigen_solver,
+                                                parameters.mu );
+      else if (parameters.mat_type == "Ogden")
+          Ogden<dim, ADNumberType> material( parameters.solid_vol_frac,
+                                             parameters.lambda,
+                                             parameters.growth_type,
+                                             parameters.growth_rate,
+                                             parameters.growth_exponential,
+                                             time,
+                                             parameters.eigen_solver,
+                                             parameters.mu1_infty,
+                                             parameters.mu2_infty,
+                                             parameters.mu3_infty,
+                                             parameters.alpha1_infty,
+                                             parameters.alpha2_infty,
+                                             parameters.alpha3_infty );
+      else if (parameters.mat_type == "visco-Ogden")
+          visco_Ogden <dim, ADNumberType>material( parameters.solid_vol_frac,
+                                                   parameters.lambda,
+                                                   parameters.growth_type,
+                                                   parameters.growth_rate,
+                                                   parameters.growth_exponential,
+                                                   time,
+                                                   parameters.eigen_solver,
+                                                   parameters.mu1_infty,
+                                                   parameters.mu2_infty,
+                                                   parameters.mu3_infty,
+                                                   parameters.alpha1_infty,
+                                                   parameters.alpha2_infty,
+                                                   parameters.alpha3_infty,
+                                                   parameters.mu1_mode_1,
+                                                   parameters.mu2_mode_1,
+                                                   parameters.mu3_mode_1,
+                                                   parameters.alpha1_mode_1,
+                                                   parameters.alpha2_mode_1,
+                                                   parameters.alpha3_mode_1,
+                                                   parameters.viscosity_mode_1);
+      else
+          Assert (false, ExcMessage("Material type not implemented"));
+
+      //Iterate through elements (cells) and Gauss Points
+      FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
+        cell (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.begin_active()),
+        endc (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.end());
+      //start cell loop
+      for (; cell!=endc; ++cell)
+      {
+          if (cell->subdomain_id() != this_mpi_process) continue;
+          material_id(cell->active_cell_index()) = static_cast<int>(cell->material_id());
+
+          //start gauss point loop
+          for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
+          {
+              const UpdateFlags uf_face(update_quadrature_points | update_normal_vectors);
+              FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
+
+              // Load vectors derived from Neumann bcs on surface
+              for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) //Loop over faces in element
+              {
+                  if (cell->face(face)->at_boundary() == true)
+                  {
+                      fe_face_values_ref.reinit(cell, face);
+
+                      for (unsigned int f_q_point = 0; f_q_point < n_q_points_f; ++f_q_point)
+                        {
+                            const Tensor<1, dim> &N = fe_face_values_ref.normal_vector(f_q_point);
+                            const Point<dim>     &pt = fe_face_values_ref.quadrature_point(f_q_point);
+                            const Tensor<1, dim> traction =
+                              get_neumann_traction(cell->face(face)->boundary_id(), pt, N);
+                        }
+                   }
+              }
+          } //end gauss point loop
+      }//end cell loop
+
+      // Data on faces
+      DataOutFaces<dim> data_out_face(true); //Should maje FilteredDataOutFaces class!!!
+      //std::vector<std::string> face_name(1,"loading");
+      std::vector<DataComponentInterpretation::DataComponentInterpretation>
+        face_component_type(dim,
+                            DataComponentInterpretation::component_is_part_of_vector);
+        face_component_type.push_back(DataComponentInterpretation::component_is_scalar);
+
+      //data_out_face.add_data_vector (dof_handler_ref,
+      //                               solution_total,
+      //                               face_name,
+      //                               face_component_type);
+
+
+      std::vector<std::string> solution_face_name(dim, "displacement");
+      solution_face_name.push_back("pore_pressure");
+
+      data_out_face.attach_dof_handler(dof_handler_ref);
+      data_out_face.add_data_vector(solution_total,
+                                    solution_face_name,
+                                    DataOutFaces<dim>::type_dof_data,
+                                    face_component_type);
+
+      data_out_face.build_patches (degree_displ);
+
+      struct Filename_faces
+      {
+        static std::string get_filename_face_vtu (unsigned int process,
+                                                  unsigned int timestep,
+                                                  const unsigned int n_digits = 5)
+        {
+          std::ostringstream filename_face_vtu;
+          filename_face_vtu
+          << "loading."
+          << Utilities::int_to_string (process, n_digits)
+          << "."
+          << Utilities::int_to_string(timestep, n_digits)
+          << ".vtu";
+          return filename_face_vtu.str();
+        }
+
+        static std::string get_filename_face_pvtu (unsigned int timestep,
+                                                   const unsigned int n_digits = 5)
+        {
+          std::ostringstream filename_face_vtu;
+          filename_face_vtu
+          << "loading."
+          << Utilities::int_to_string(timestep, n_digits)
+          << ".pvtu";
+          return filename_face_vtu.str();
+        }
+
+        static std::string get_filename_face_pvd (void)
+        {
+          std::ostringstream filename_face_vtu;
+          filename_face_vtu
+          << "loading.pvd";
+          return filename_face_vtu.str();
+        }
+      };
+
+      const std::string filename_face_vtu =
+          Filename_faces::get_filename_face_vtu(this_mpi_process, timestep);
+      std::ofstream output_face(filename_face_vtu.c_str());
+      data_out_face.write_vtu(output_face);
+
+      // We have a collection of files written in parallel
+      // This next set of steps should only be performed by master process
+      if (this_mpi_process == 0)
+      {
+        // List of all files written out at this timestep by all processors
+        std::vector<std::string> parallel_filenames_face_vtu;
+        for (unsigned int p=0; p < n_mpi_processes; ++p)
+        {
+          parallel_filenames_face_vtu.push_back(Filename_faces::get_filename_face_vtu(p, timestep));
+        }
+
+        const std::string filename_face_pvtu (Filename_faces::get_filename_face_pvtu(timestep));
+        std::ofstream pvtu_master(filename_face_pvtu.c_str());
+        data_out_face.write_pvtu_record(pvtu_master,
+                                        parallel_filenames_face_vtu);
+
+        // Time dependent data master file
+        static std::vector<std::pair<double,std::string> > time_and_name_history_face;
+        time_and_name_history_face.push_back (std::make_pair (current_time,
+                                                         filename_face_pvtu));
+        const std::string filename_face_pvd (Filename_faces::get_filename_face_pvd());
+        std::ofstream pvd_output_face(filename_face_pvd.c_str());
+        DataOutBase::write_pvd_record(pvd_output_face, time_and_name_history_face);
+      }
+
+    }
     //Print results to plotting file
     template <int dim>
     void Solid<dim>::output_results_to_plot(const unsigned int timestep,
