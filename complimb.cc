@@ -1864,7 +1864,7 @@ namespace CompLimb
             std::vector<IndexSet> locally_owned_partitioning;
             std::vector<IndexSet> locally_relevant_partitioning;
 
-            std::vector<types::global_dof_index>          dofs_per_block;
+            std::vector<types::global_dof_index>        dofs_per_block;
             std::vector<types::global_dof_index>        element_indices_u;
             std::vector<types::global_dof_index>        element_indices_p_fluid;
 
@@ -3196,37 +3196,6 @@ namespace CompLimb
         };
 */
 
-/*
-    //Class to reduce stresses in Paraview to a single entry instead of 5
-    template <int dim>
-    class ComputeSingleOutput : public DataPostprocessorScalar<dim>
-    {
-      public:
-        ComputeSingleOutput (const std::string &name)
-          :
-          DataPostprocessorScalar<dim> (name,
-                                        update_values)
-        {}
-
-        virtual ~ComputeSingleOutput(){}
-
-        virtual void
-        evaluate_scalar_field (const DataPostprocessorInputs::Scalar<dim> &input_data,
-                              std::vector<Vector<double>>                 &computed_quantities) const
-        {
-            AssertDimension (input_data.solution_values.size(),
-                             computed_quantities.size());
-
-             for (unsigned int p=0; p<input_data.solution_values.size(); ++p)
-             {
-                 AssertDimension (computed_quantities[0].size(), 1);
-                 computed_quantities[p] = input_data.solution_values[p];
-             }
-         }
-
-        //private:
-        //  std::string name;
-    };*/
     //Print results to vtu file
     template <int dim>
     void Solid<dim>::output_results_to_vtu(const unsigned int timestep,
@@ -3239,9 +3208,7 @@ namespace CompLimb
                                                           false);
       solution_total = solution_IN;
       Vector<double> material_id;
-      Vector<double> polynomial_order;
       material_id.reinit(triangulation.n_active_cells());
-      polynomial_order.reinit(triangulation.n_active_cells());
       std::vector<types::subdomain_id> partition_int (triangulation.n_active_cells());
       GradientPostprocessor<dim> gradient_postprocessor (p_fluid_component);
     //Example using DataPostprocessorTensor to compute infinitesimal strains, copied from:
@@ -3249,19 +3216,12 @@ namespace CompLimb
     //            StrainPostprocessor<dim> strain_postprocessor;
     //            StressPostprocessor<dim> stress_postprocessor (p_fluid_component);
 
-            //Declare objects to output only one entry for each nodal result
-    /*            ComputeSingleOutput<dim> result_cauchy_xx("cauchy_xx");
-            ComputeSingleOutput<dim> result_cauchy_yy("cauchy_yy");
-            ComputeSingleOutput<dim> result_cauchy_zz("cauchy_zz");
-            ComputeSingleOutput<dim> result_cauchy_xy("cauchy_xy");
-            ComputeSingleOutput<dim> result_cauchy_xz("cauchy_xz");
-            ComputeSingleOutput<dim> result_cauchy_yz("cauchy_yz");
-    */
        //Declare local variables with number of stress components
        //& assign value according to "dim" value
        unsigned int num_comp_symm_tensor = 6;
 
       //Declare local vectors to store values
+      // OUTPUT AVERAGED ON ELEMENTS -------------------------------------------
       std::vector<Vector<double>>
         cauchy_stresses_total_elements (num_comp_symm_tensor,
                                         Vector<double> (triangulation.n_active_cells()));
@@ -3282,15 +3242,36 @@ namespace CompLimb
       Vector<double >solid_vol_fraction_elements (triangulation.n_active_cells());
       Vector<double> growth_stretch_elements (triangulation.n_active_cells());
 
-      // OUTPUT AVERAGED ON NODES ----------------------------------------------
+      // OUTPUT AVERAGED ON NODES ----------------------------------------------.
+      FE_Q<dim>       fe_vertex (1);
+      DoFHandler<dim> vertex_handler_ref(triangulation);
+      vertex_handler_ref.distribute_dofs (fe_vertex);
+      AssertThrow(vertex_handler_ref.n_dofs() == triangulation.n_vertices(),
+            ExcDimensionMismatch(vertex_handler_ref.n_dofs(),triangulation.n_vertices()));
 
-      //Change dof_handler_ref.n_dofs() to 1/4 so solution is not repeated 4 times.
-      //But must extract the first component of each node, so there is still correspondance.
       std::vector<Vector<double>>
-        cauchy_stresses_total_nodes(num_comp_symm_tensor,
-                                    Vector<double>(dof_handler_ref.n_dofs()));
+        cauchy_stresses_total_vertex(num_comp_symm_tensor,
+                                     Vector<double>(vertex_handler_ref.n_dofs()));
+      std::vector<Vector<double>>
+        cauchy_stresses_E_vertex(num_comp_symm_tensor,
+                                 Vector<double>(vertex_handler_ref.n_dofs()));
+      std::vector<Vector<double>>
+        cauchy_stresses_p_vertex(num_comp_symm_tensor,
+                                 Vector<double>(vertex_handler_ref.n_dofs()));
+      std::vector<Vector<double>>
+        stretches_vertex(dim,
+                         Vector<double>(vertex_handler_ref.n_dofs()));
+      std::vector<Vector<double>>
+      seepage_velocity_vertex(dim,
+                              Vector<double>(vertex_handler_ref.n_dofs()));
+
+      Vector<double> porous_dissipation_vertex(vertex_handler_ref.n_dofs());
+      Vector<double> viscous_dissipation_vertex(vertex_handler_ref.n_dofs());
+      Vector<double> solid_vol_fraction_vertex(vertex_handler_ref.n_dofs());
+      Vector<double> growth_stretch_vertex(vertex_handler_ref.n_dofs());
+
+      Vector<double> mass_matrix_postpro_vertex(vertex_handler_ref.n_dofs());
       std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-      Vector<double> mass_matrix_postprocessing(dof_handler_ref.n_dofs());
       // -----------------------------------------------------------------------
 
       //Declare and initialize local unit vectors (to construct tensor basis)
@@ -3355,9 +3336,10 @@ namespace CompLimb
       //Iterate through elements (cells) and Gauss Points
       FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
         cell (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.begin_active()),
-        endc (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.end());
+        endc (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.end()),
+        cell_v (IteratorFilters::SubdomainEqualTo(this_mpi_process), vertex_handler_ref.begin_active());
       //start cell loop
-      for (; cell!=endc; ++cell)
+      for (; cell!=endc; ++cell, ++cell_v)
       {
           if (cell->subdomain_id() != this_mpi_process) continue;
           material_id(cell->active_cell_index()) = static_cast<int>(cell->material_id());
@@ -3375,10 +3357,8 @@ namespace CompLimb
 
           // OUTPUT AVERAGED ON NODES ----------------------------------------------
           cell->get_dof_indices(local_dof_indices);
-          //Change dof_handler_ref.n_dofs() to 1/4 so solution is not repeated 4 times.
-          //But must extract the first component of each node, so there is still correspondance.
-
           // -----------------------------------------------------------------------
+
           //start gauss point loop
           for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
           {
@@ -3477,44 +3457,68 @@ namespace CompLimb
               // OUTPUT AVERAGED ON NODES -------------------------------------------
               else if (parameters.outtype == "nodes")
               {
-                  //For-loop to calculate stress components at each node
-                  for (unsigned int j=0; j<(dofs_per_cell); ++j)
-                  {
-                      //Return for DOF "j" the number (type) of the base element (u or p) it is
-                      const unsigned int j_group = fe.system_to_base_index(j).first.first;
+                for (unsigned int v = 0; v<(GeometryInfo<dim>::vertices_per_cell); ++v)
+                {
+                        unsigned int j=v*n_components; //Identify corresponding dof position
+                        types::global_dof_index local_vertex_indices = cell_v->vertex_dof_index(v, 0);
+                        double  Nj= fe_values_ref.shape_value(j, q_point);
 
-                      //For DOF belonging to displacement variables, select only first component
-                      if (j_group == u_block)
-                      {
-                          const unsigned int u_component = fe.system_to_component_index(j).first;
-                          if (u_component == first_u_component)
-                          {
-                            double  Nj= fe_values_ref.shape_value(j, q_point);
+                        for (unsigned int u=0; u<(GeometryInfo<dim>::vertices_per_cell); ++u)
+                        {
+                              unsigned int k=u*n_components;
+                              if (fe.system_to_component_index(j).first ==
+                                  fe.system_to_component_index(k).first    )
+                              {
+                                  double Nk = fe_values_ref.shape_value(k, q_point);
+                                  mass_matrix_postpro_vertex(local_vertex_indices)
+                                    += (Nj * Nk * JxW);
+                              }
+                        }
 
-                            for (unsigned int k=0; k<(dofs_per_cell); k++)
-                            {
-                                  if (fe.system_to_component_index(j).first ==
-                                      fe.system_to_component_index(k).first    )
-                                  {
-                                      double Nk = fe_values_ref.shape_value(k, q_point);
-                                      mass_matrix_postprocessing(local_dof_indices[j])
-                                        += (Nj * Nk * JxW);
-                                  }
-                            }
+                        for (unsigned int k=0; k<dim; ++k)
+                        {
+                            cauchy_stresses_total_vertex[k][local_vertex_indices]
+                              += Nj*((sigma * basis_vectors[k])* basis_vectors[k])*JxW;
+                            cauchy_stresses_E_vertex[k][local_vertex_indices]
+                              += Nj*((sigma_E * basis_vectors[k])* basis_vectors[k])*JxW;
+                            cauchy_stresses_p_vertex[k][local_vertex_indices]
+                              += Nj*((sigma_fluid_vol * basis_vectors[k])* basis_vectors[k])*JxW;
+                            stretches_vertex[k][local_vertex_indices]
+                              += Nj*(std::sqrt(1.0+2.0*Tensor<0,dim,double>(E_strain[k][k])))*JxW;
+                            seepage_velocity_vertex[k][local_vertex_indices]
+                              += Nj*(Tensor<0,dim,double>(seepage_vel_AD[k]))*JxW;
+                        }
 
-                            for (unsigned int k=0; k<dim; ++k)
-                            {
-                                cauchy_stresses_total_nodes[k][local_dof_indices[j]]
-                                  += Nj*((sigma * basis_vectors[k])* basis_vectors[k])*JxW;
-                            }
-                            cauchy_stresses_total_nodes[3][local_dof_indices[j]]
-                              += Nj*((sigma * basis_vectors[0])* basis_vectors[1])*JxW; //sig_xy
-                            cauchy_stresses_total_nodes[4][local_dof_indices[j]]
-                              += Nj*((sigma * basis_vectors[0])* basis_vectors[2])*JxW;//sig_xz
-                            cauchy_stresses_total_nodes[5][local_dof_indices[j]]
-                              += Nj*((sigma * basis_vectors[1])* basis_vectors[2])*JxW; //sig_yz
-                          }
-                      }
+                        porous_dissipation_vertex[local_vertex_indices]
+                          +=  Nj*porous_dissipation*JxW;
+                        viscous_dissipation_vertex[local_vertex_indices]
+                          +=  Nj*viscous_dissipation*JxW;
+                        solid_vol_fraction_vertex[local_vertex_indices]
+                          +=  Nj*solid_vol_fraction*JxW;
+
+                        growth_stretch_vertex[local_vertex_indices]
+                          += Nj*growth_stretch*JxW;
+
+                        cauchy_stresses_total_vertex[3][local_vertex_indices]
+                          += Nj*((sigma * basis_vectors[0])* basis_vectors[1])*JxW; //sig_xy
+                        cauchy_stresses_total_vertex[4][local_vertex_indices]
+                          += Nj*((sigma * basis_vectors[0])* basis_vectors[2])*JxW;//sig_xz
+                        cauchy_stresses_total_vertex[5][local_vertex_indices]
+                          += Nj*((sigma * basis_vectors[1])* basis_vectors[2])*JxW; //sig_yz
+
+                        cauchy_stresses_E_vertex[3][local_vertex_indices]
+                          += Nj*((sigma_E * basis_vectors[0])* basis_vectors[1])*JxW; //sig_xy
+                        cauchy_stresses_E_vertex[4][local_vertex_indices]
+                          += Nj*((sigma_E * basis_vectors[0])* basis_vectors[2])*JxW;//sig_xz
+                        cauchy_stresses_E_vertex[5][local_vertex_indices]
+                          += Nj*((sigma_E * basis_vectors[1])* basis_vectors[2])*JxW; //sig_yz
+
+                        cauchy_stresses_E_vertex[3][local_vertex_indices]
+                          += Nj*((sigma_fluid_vol * basis_vectors[0])* basis_vectors[1])*JxW; //sig_xy
+                        cauchy_stresses_total_vertex[4][local_vertex_indices]
+                          += Nj*((sigma_fluid_vol * basis_vectors[0])* basis_vectors[2])*JxW;//sig_xz
+                        cauchy_stresses_total_vertex[5][local_vertex_indices]
+                          += Nj*((sigma_fluid_vol * basis_vectors[1])* basis_vectors[2])*JxW; //sig_yz
                   }
               }
             //---------------------------------------------------------------
@@ -3559,55 +3563,123 @@ namespace CompLimb
       // Integration point results -----------------------------------------------------------
       if (parameters.outtype == "elements")
       {
-        data_out.add_data_vector (cauchy_stresses_total_elements[0], "sigma_total_xx");
-        data_out.add_data_vector (cauchy_stresses_total_elements[1], "sigma_total_yy");
-        data_out.add_data_vector (cauchy_stresses_total_elements[2], "sigma_total_zz");
-        data_out.add_data_vector (cauchy_stresses_total_elements[3], "sigma_total_xy");
-        data_out.add_data_vector (cauchy_stresses_total_elements[4], "sigma_total_xz");
-        data_out.add_data_vector (cauchy_stresses_total_elements[5], "sigma_total_yz");
+        data_out.add_data_vector (cauchy_stresses_total_elements[0], "cauchy_xx");
+        data_out.add_data_vector (cauchy_stresses_total_elements[1], "cauchy_yy");
+        data_out.add_data_vector (cauchy_stresses_total_elements[2], "cauchy_zz");
+        data_out.add_data_vector (cauchy_stresses_total_elements[3], "cauchy_xy");
+        data_out.add_data_vector (cauchy_stresses_total_elements[4], "cauchy_xz");
+        data_out.add_data_vector (cauchy_stresses_total_elements[5], "cauchy_yz");
 
-        data_out.add_data_vector (cauchy_stresses_E_elements[0], "sigma_extra_xx");
-        data_out.add_data_vector (cauchy_stresses_E_elements[1], "sigma_extra_yy");
-        data_out.add_data_vector (cauchy_stresses_E_elements[2], "sigma_extra_zz");
-        data_out.add_data_vector (cauchy_stresses_E_elements[3], "sigma_extra_xy");
-        data_out.add_data_vector (cauchy_stresses_E_elements[4], "sigma_extra_xz");
-        data_out.add_data_vector (cauchy_stresses_E_elements[5], "sigma_extra_yz");
+        data_out.add_data_vector (cauchy_stresses_E_elements[0], "cauchy_E_xx");
+        data_out.add_data_vector (cauchy_stresses_E_elements[1], "cauchy_E_yy");
+        data_out.add_data_vector (cauchy_stresses_E_elements[2], "cauchy_E_zz");
+        data_out.add_data_vector (cauchy_stresses_E_elements[3], "cauchy_E_xy");
+        data_out.add_data_vector (cauchy_stresses_E_elements[4], "cauchy_E_xz");
+        data_out.add_data_vector (cauchy_stresses_E_elements[5], "cauchy_E_yz");
 
-        data_out.add_data_vector (cauchy_stresses_p_elements[0], "sigma_pressure_xx");
-        data_out.add_data_vector (cauchy_stresses_p_elements[1], "sigma_pressure_yy");
-        data_out.add_data_vector (cauchy_stresses_p_elements[2], "sigma_pressure_zz");
-        data_out.add_data_vector (cauchy_stresses_p_elements[3], "sigma_pressure_xy");
-        data_out.add_data_vector (cauchy_stresses_p_elements[4], "sigma_pressure_xz");
-        data_out.add_data_vector (cauchy_stresses_p_elements[5], "sigma_pressure_yz");
+        data_out.add_data_vector (cauchy_stresses_p_elements[0], "cauchy_p_xx");
+        data_out.add_data_vector (cauchy_stresses_p_elements[1], "cauchy_p_yy");
+        data_out.add_data_vector (cauchy_stresses_p_elements[2], "cauchy_p_zz");
+        data_out.add_data_vector (cauchy_stresses_p_elements[3], "cauchy_p_xy");
+        data_out.add_data_vector (cauchy_stresses_p_elements[4], "cauchy_p_xz");
+        data_out.add_data_vector (cauchy_stresses_p_elements[5], "cauchy_p_yz");
 
         data_out.add_data_vector (stretches_elements[0], "stretch_xx");
         data_out.add_data_vector (stretches_elements[1], "stretch_yy");
         data_out.add_data_vector (stretches_elements[2], "stretch_zz");
 
+        data_out.add_data_vector (seepage_velocity_elements[0], "seepage_vel_x");
+        data_out.add_data_vector (seepage_velocity_elements[1], "seepage_vel_y");
+        data_out.add_data_vector (seepage_velocity_elements[2], "seepage_vel_z");
+
         data_out.add_data_vector (growth_stretch_elements, "growth_stretch");
+        data_out.add_data_vector (porous_dissipation_elements, "porous_dissipation");
+        data_out.add_data_vector (viscous_dissipation_elements, "viscous_dissipation");
+        data_out.add_data_vector (solid_vol_fraction_elements, "solid_vol_fraction");
       }
       else if  (parameters.outtype == "nodes")
       {
-        for (unsigned int i = 0; i < mass_matrix_postprocessing.size(); ++i)
-            mass_matrix_postprocessing(i) = 1 / mass_matrix_postprocessing(i);
+        for (unsigned int i = 0; i < mass_matrix_postpro_vertex.size(); ++i)
+            mass_matrix_postpro_vertex(i) = 1. / mass_matrix_postpro_vertex(i);
 
         for (unsigned int i=0; i<num_comp_symm_tensor; ++i)
-            cauchy_stresses_total_nodes[i].scale(mass_matrix_postprocessing);
+        {
+            cauchy_stresses_total_vertex[i].scale(mass_matrix_postpro_vertex);
+            cauchy_stresses_E_vertex[i].scale(mass_matrix_postpro_vertex);
+            cauchy_stresses_p_vertex[i].scale(mass_matrix_postpro_vertex);
+        }
 
-    /*
-        data_out.add_data_vector (cauchy_stresses_total_nodes[0], result_cauchy_xx);
-        data_out.add_data_vector (cauchy_stresses_total_nodes[1], result_cauchy_yy);
-        data_out.add_data_vector (cauchy_stresses_total_nodes[2], result_cauchy_zz);
-        data_out.add_data_vector (cauchy_stresses_total_nodes[3], result_cauchy_xy);
-        data_out.add_data_vector (cauchy_stresses_total_nodes[4], result_cauchy_xz);
-        data_out.add_data_vector (cauchy_stresses_total_nodes[5], result_cauchy_yz);
-    */
-        data_out.add_data_vector (cauchy_stresses_total_nodes[0], "cauchy_xx");
-    //    data_out.add_data_vector (cauchy_stresses_total_nodes[1], "cauchy_yy");
-    //    data_out.add_data_vector (cauchy_stresses_total_nodes[2], "cauchy_zz");
-    //    data_out.add_data_vector (cauchy_stresses_total_nodes[3], "cauchy_xy");
-    //    data_out.add_data_vector (cauchy_stresses_total_nodes[4], "cauchy_xz");
-    //    data_out.add_data_vector (cauchy_stresses_total_nodes[5], "cauchy_yz");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_total_vertex[0],"cauchy_xx");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_total_vertex[1],"cauchy_yy");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_total_vertex[2],"cauchy_zz");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_total_vertex[3],"cauchy_xy");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_total_vertex[4],"cauchy_xz");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_total_vertex[5],"cauchy_yz");
+
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_E_vertex[0],"cauchy_E_xx");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_E_vertex[1],"cauchy_E_yy");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_E_vertex[2],"cauchy_E_zz");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_E_vertex[3],"cauchy_E_xy");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_E_vertex[4],"cauchy_E_xz");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_E_vertex[5],"cauchy_E_yz");
+
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_p_vertex[0],"cauchy_p_xx");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_p_vertex[1],"cauchy_p_yy");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_p_vertex[2],"cauchy_p_zz");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_p_vertex[3],"cauchy_p_xy");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_p_vertex[4],"cauchy_p_xz");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  cauchy_stresses_p_vertex[5],"cauchy_p_yz");
+
+        data_out.add_data_vector (vertex_handler_ref,
+                                  stretches_vertex[0], "stretch_xx");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  stretches_vertex[1], "stretch_yy");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  stretches_vertex[2], "stretch_zz");
+
+        data_out.add_data_vector (vertex_handler_ref,
+                                  seepage_velocity_vertex[0], "seepage_vel_x");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  seepage_velocity_vertex[1], "seepage_vel_y");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  seepage_velocity_vertex[2], "seepage_vel_z");
+
+/*
+        std::vector<DataComponentInterpretation::DataComponentInterpretation>
+          data_component_int(dim,
+                             DataComponentInterpretation::component_is_part_of_vector);
+        std::vector<std::string> sol_name(dim, "seepage_velocity");
+        data_out.add_data_vector(vertex_handler_ref,
+                                 seepage_velocity_vertex,
+                                 sol_name,
+                                 data_component_int);
+*/
+        data_out.add_data_vector (vertex_handler_ref,
+                                  growth_stretch_vertex, "growth_stretch");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  porous_dissipation_vertex, "porous_dissipation");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  viscous_dissipation_vertex, "viscous_dissipation");
+        data_out.add_data_vector (vertex_handler_ref,
+                                  solid_vol_fraction_vertex, "solid_vol_fraction");
       }
     //---------------------------------------------------------------------
 
@@ -3690,9 +3762,21 @@ namespace CompLimb
                                                           false);
       solution_total = solution_IN;
       Vector<double> material_id;
-      Vector<double> polynomial_order;
       material_id.reinit(triangulation.n_active_cells());
-      polynomial_order.reinit(triangulation.n_active_cells());
+
+      //Declare local vectors to store values
+      // OUTPUT AVERAGED ON ELEMENTS -------------------------------------------
+      std::vector<Vector<double>>
+        load_on_faces(dim,
+                      Vector<double> (triangulation.n_active_cells()));
+
+      // OUTPUT AVERAGED ON NODES ----------------------------------------------
+      std::vector<Vector<double>>
+        load_on_nodes(dim,
+                      Vector<double>(dof_handler_ref.n_dofs()));
+      std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+      Vector<double> mass_matrix_postprocessing(dof_handler_ref.n_dofs());
+      // -----------------------------------------------------------------------
 
       //Declare an instance of the material class object
       if (parameters.mat_type == "Neo-Hooke")
@@ -3742,6 +3826,7 @@ namespace CompLimb
       else
           Assert (false, ExcMessage("Material type not implemented"));
 
+
       //Iterate through elements (cells) and Gauss Points
       FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
         cell (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.begin_active()),
@@ -3752,45 +3837,86 @@ namespace CompLimb
           if (cell->subdomain_id() != this_mpi_process) continue;
           material_id(cell->active_cell_index()) = static_cast<int>(cell->material_id());
 
-          //start gauss point loop
-          for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
+          const UpdateFlags uf_face(update_quadrature_points | update_normal_vectors |
+                                    update_values | update_JxW_values );
+          FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
+
+          //start face loop
+          for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) //Loop over faces in element
           {
-              const UpdateFlags uf_face(update_quadrature_points | update_normal_vectors);
-              FEFaceValues<dim> fe_face_values_ref(fe, qf_face, uf_face);
+            if (cell->face(face)->at_boundary() == true)
+            {
+                fe_face_values_ref.reinit(cell, face);
 
-              // Load vectors derived from Neumann bcs on surface
-              for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face) //Loop over faces in element
-              {
-                  if (cell->face(face)->at_boundary() == true)
-                  {
-                      fe_face_values_ref.reinit(cell, face);
+                //start gauss point loop
+                for (unsigned int f_q_point = 0; f_q_point < n_q_points_f; ++f_q_point)
+                {
+                    // Compute load vectors derived from Neumann bcs on surface
+                    const Tensor<1, dim> &N = fe_face_values_ref.normal_vector(f_q_point);
+                    const Point<dim>     &pt = fe_face_values_ref.quadrature_point(f_q_point);
+                    const Tensor<1, dim> traction =
+                      get_neumann_traction(cell->face(face)->boundary_id(), pt, N);
 
-                      for (unsigned int f_q_point = 0; f_q_point < n_q_points_f; ++f_q_point)
+                    if (traction.norm() < 1e-12) continue;
+                    // OUTPUT AVERAGED ON ELEMENTS -------------------------------------------
+                    if (parameters.outtype == "elements")
+                    {
+                        for (unsigned int j=0; j<dim; ++j)
                         {
-                            const Tensor<1, dim> &N = fe_face_values_ref.normal_vector(f_q_point);
-                            const Point<dim>     &pt = fe_face_values_ref.quadrature_point(f_q_point);
-                            const Tensor<1, dim> traction =
-                              get_neumann_traction(cell->face(face)->boundary_id(), pt, N);
+                            load_on_faces[j][cell->active_cell_index()]
+                              += traction[j]/n_q_points_f;
                         }
-                   }
-              }
-          } //end gauss point loop
+                    }
+
+                    // OUTPUT AVERAGED ON NODES -------------------------------------------
+                    else if (parameters.outtype == "nodes")
+                    {
+                        const double JxW_f = fe_face_values_ref.JxW(f_q_point);
+
+                        //For-loop to calculate loading value at each node
+                        for (unsigned int j=0; j<(dofs_per_cell); ++j)
+                        {
+                            //Return for DOF "j" the number (type) of the base element (u or p) it is
+                            const unsigned int j_group = fe.system_to_base_index(j).first.first;
+
+                            //For DOF belonging to displacement variables, select only first component
+                            if (j_group == u_block)
+                            {
+                                const unsigned int component_j = fe.system_to_component_index(j).first;
+                                double  Nj_f= fe_face_values_ref.shape_value(j, f_q_point);
+
+                                for (unsigned int k=0; k<(dofs_per_cell); k++)
+                                {
+                                      if (fe.system_to_component_index(j).first ==
+                                          fe.system_to_component_index(k).first    )
+                                      {
+                                          double Nk_f = fe_face_values_ref.shape_value(k, f_q_point);
+                                          mass_matrix_postprocessing(local_dof_indices[j])
+                                            += (Nj_f * Nk_f * JxW_f);
+                                      }
+                                }
+
+                                for (unsigned int k=0; k<dim; ++k)
+                                {
+                                      load_on_nodes[k][local_dof_indices[j]]
+                                      += traction[component_j]*JxW_f;
+                                }
+                            }
+                        }
+                    }
+                    //--------------------------------------------------------------
+                  }//end gauss point loop
+            }//if face is in boundary
+        }//end face loop
       }//end cell loop
 
-      //DataOutFaces<dim> data_out_face(true); //Should make FilteredDataOutFaces class!!!
       FilteredDataOutFaces<dim> data_out_face(this_mpi_process);
 
       //std::vector<std::string> face_name(1,"loading");
       std::vector<DataComponentInterpretation::DataComponentInterpretation>
         face_component_type(dim,
                             DataComponentInterpretation::component_is_part_of_vector);
-        face_component_type.push_back(DataComponentInterpretation::component_is_scalar);
-
-      //data_out_face.add_data_vector (dof_handler_ref,
-      //                               solution_total,
-      //                               face_name,
-      //                               face_component_type);
-
+      face_component_type.push_back(DataComponentInterpretation::component_is_scalar);
 
       std::vector<std::string> solution_face_name(dim, "displacement");
       solution_face_name.push_back("pore_pressure");
@@ -3800,6 +3926,36 @@ namespace CompLimb
                                     solution_face_name,
                                     DataOutFaces<dim>::type_dof_data,
                                     face_component_type);
+
+      // Integration point results -----------------------------------------------------------
+      if (parameters.outtype == "elements")
+      {
+      /*  std::vector<DataComponentInterpretation::DataComponentInterpretation>
+          face_component_type_bis(dim,
+                                  DataComponentInterpretation::component_is_part_of_vector);
+        std::vector<std::string> solution_face_name_bis(dim, "load");
+        data_out_face.add_data_vector( load_on_faces,
+                                       solution_face_name_bis,
+                                       DataOutFaces<dim>::type_cell_data,
+                                       face_component_type_bis);
+      */
+        data_out_face.add_data_vector (load_on_faces[0], "load_x");
+        data_out_face.add_data_vector (load_on_faces[1], "load_y");
+        data_out_face.add_data_vector (load_on_faces[2], "load_z");
+      }
+      else if  (parameters.outtype == "nodes")
+      {
+        for (unsigned int i = 0; i < mass_matrix_postprocessing.size(); ++i)
+            mass_matrix_postprocessing(i) = 1 / mass_matrix_postprocessing(i);
+
+        for (unsigned int i=0; i<dim; ++i)
+            load_on_nodes[i].scale(mass_matrix_postprocessing);
+
+        data_out_face.add_data_vector (load_on_nodes[0], "load_x");
+        data_out_face.add_data_vector (load_on_nodes[1], "load_y");
+        data_out_face.add_data_vector (load_on_nodes[2], "load_z");
+      }
+    //---------------------------------------------------------------------
 
       data_out_face.build_patches (degree_displ);
 
@@ -3886,9 +4042,9 @@ namespace CompLimb
       (void) timestep;
       solution_total = solution_IN;
       Vector<double> material_id;
-      Vector<double> polynomial_order;
+    //  Vector<double> polynomial_order;
       material_id.reinit(triangulation.n_active_cells());
-      polynomial_order.reinit(triangulation.n_active_cells());
+    //  polynomial_order.reinit(triangulation.n_active_cells());
       std::vector<types::subdomain_id> partition_int (triangulation.n_active_cells());
 
       //Variables needed to print the solution file for plotting
@@ -4472,6 +4628,11 @@ namespace CompLimb
                                                       (this->fe.component_mask(this->x_displacement) |
                                                        this->fe.component_mask(this->y_displacement) |
                                                        this->fe.component_mask(this->z_displacement) ));
+
+            if (this->parameters.load_type == "displacement")
+              AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: "
+                                             + this->parameters.geom_type));
+
           }
 
           virtual double
@@ -4500,10 +4661,7 @@ namespace CompLimb
           {
               double displ_incr = 0;
               FEValuesExtractors::Scalar direction;
-
               (void)boundary_id;
-              throw std::runtime_error ("Displacement loading not implemented for Ehlers validation examples.");
-
               return std::make_pair(displ_incr,direction);
           }
     };
@@ -4535,7 +4693,6 @@ namespace CompLimb
               }
 
               (void)pt;
-
               return Tensor<1,dim>();
             }
     };
@@ -4573,7 +4730,6 @@ namespace CompLimb
               }
 
               (void)pt;
-
               return Tensor<1,dim>();
             }
     };
@@ -4682,6 +4838,10 @@ namespace CompLimb
                                                       ( this->fe.component_mask(this->x_displacement) |
                                                         this->fe.component_mask(this->y_displacement) |
                                                         this->fe.component_mask(this->z_displacement) ));
+
+          if (this->parameters.load_type == "displacement")
+            AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: "
+                                           + this->parameters.geom_type));
           }
 
           virtual Tensor<1,dim>
@@ -4698,7 +4858,6 @@ namespace CompLimb
             }
 
             (void)pt;
-
             return Tensor<1,dim>();
           }
 
@@ -4728,10 +4887,7 @@ namespace CompLimb
           {
               double displ_incr = 0;
               FEValuesExtractors::Scalar direction;
-
               (void)boundary_id;
-              throw std::runtime_error ("Displacement loading not implemented for Ehlers validation examples.");
-
               return std::make_pair(displ_incr,direction);
           }
     };
@@ -4862,6 +5018,10 @@ namespace CompLimb
                                                       constraints,
                                                       (this->fe.component_mask(this->x_displacement) |
                                                        this->fe.component_mask(this->y_displacement) ));
+
+           if (this->parameters.load_type == "displacement")
+             AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: "
+                                            + this->parameters.geom_type));
           }
 
           virtual double
@@ -4890,10 +5050,7 @@ namespace CompLimb
           {
               double displ_incr = 0;
               FEValuesExtractors::Scalar direction;
-
               (void)boundary_id;
-              throw std::runtime_error ("Displacement loading not implemented for Franceschini examples.");
-
               return std::make_pair(displ_incr,direction);
           }
 
@@ -4908,11 +5065,9 @@ namespace CompLimb
               {
                 return (this->parameters.load * N);
 
-
                 const double final_load = this->parameters.load;
                 const double final_load_time = 10 * this->time.get_delta_t();
                 const double current_time = this->time.get_current();
-
 
                 const double c = final_load_time / 2.0;
                 const double r = 200.0 * 0.03 / c;
@@ -4924,7 +5079,6 @@ namespace CompLimb
             }
 
             (void)pt;
-
             return Tensor<1,dim>();
           }
     };
@@ -5083,7 +5237,6 @@ namespace CompLimb
               }
 
               (void)pt;
-
               return Tensor<1,dim>();
             }
 
@@ -5230,7 +5383,6 @@ namespace CompLimb
               }
 
               (void)pt;
-
               return Tensor<1,dim>();
             }
 
@@ -5380,7 +5532,6 @@ namespace CompLimb
               }
 
               (void)pt;
-
               return Tensor<1,dim>();
             }
 
@@ -5548,6 +5699,9 @@ namespace CompLimb
                                                      this->fe.component_mask(this->y_displacement) |
                                                      this->fe.component_mask(this->z_displacement) ) );
 
+       if (this->parameters.load_type == "displacement")
+         AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: "
+                                        + this->parameters.geom_type));
       }
 
       virtual Tensor<1,dim>
@@ -5555,11 +5709,14 @@ namespace CompLimb
                             const Point<dim>         &pt,
                             const Tensor<1,dim>      &N) const
       {
+
+        if (this->parameters.load_type == "pressure")
+          AssertThrow(false, ExcMessage("Pressure loading not defined for the current problem: "
+                                         + this->parameters.geom_type));
         //To get rid of warning message
         (void)boundary_id;
         (void)pt;
         (void)N;
-        throw std::runtime_error ("No loading implemented for muffin example.");
         return Tensor<1,dim>();
       }
 
@@ -5591,7 +5748,6 @@ namespace CompLimb
           double displ_incr = 0;
           FEValuesExtractors::Scalar direction;
           (void)boundary_id;
-          throw std::runtime_error ("No loading implemented for muffin example.");
           return std::make_pair(displ_incr,direction);
       }
     };
@@ -5727,6 +5883,10 @@ namespace CompLimb
                                                    ( this->fe.component_mask(this->x_displacement) |
                                                      this->fe.component_mask(this->y_displacement) |
                                                      this->fe.component_mask(this->z_displacement)) );
+
+         if (this->parameters.load_type == "displacement")
+           AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: "
+                                          + this->parameters.geom_type));
       }
 
       virtual Tensor<1,dim>
@@ -5734,12 +5894,16 @@ namespace CompLimb
                             const Point<dim>         &pt,
                             const Tensor<1,dim>      &N) const
       {
+
+
+       if (this->parameters.load_type == "pressure")
+         AssertThrow(false, ExcMessage("Pressure loading not defined for the current problem: "
+                                        + this->parameters.geom_type));
+
         //To get rid of warning message
         (void)boundary_id;
         (void)pt;
         (void)N;
-        throw std::runtime_error ("Pressure loading not implemented for turtle example.");
-
         return Tensor<1,dim>();
       }
 
@@ -5853,11 +6017,14 @@ namespace CompLimb
                               const Point<dim>         &pt,
                               const Tensor<1,dim>      &N) const
       {
+        if (this->parameters.load_type == "pressure")
+          AssertThrow(false, ExcMessage("Pressure loading not defined for the current problem: "
+                                         + this->parameters.geom_type));
+
           //To get rid of warning message
           (void)boundary_id;
           (void)pt;
           (void)N;
-          throw std::runtime_error ("Pressure loading not implemented for brain growth examples.");
           return Tensor<1,dim>();
         }
 
@@ -5911,6 +6078,10 @@ namespace CompLimb
                                                     ( this->fe.component_mask(this->x_displacement) |
                                                       this->fe.component_mask(this->y_displacement) |
                                                       this->fe.component_mask(this->z_displacement) ));
+
+          if (this->parameters.load_type == "displacement")
+            AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: "
+                                           + this->parameters.geom_type));
       }
     };
 
@@ -5937,6 +6108,10 @@ namespace CompLimb
                                                     ( this->fe.component_mask(this->x_displacement) |
                                                       this->fe.component_mask(this->y_displacement) |
                                                       this->fe.component_mask(this->z_displacement) ));
+
+          if (this->parameters.load_type == "displacement")
+            AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: "
+                                           + this->parameters.geom_type));
       }
     };
 
@@ -5990,7 +6165,11 @@ namespace CompLimb
 
                 }
             }
-      }
+
+          if (this->parameters.load_type == "displacement")
+          AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: "
+           + this->parameters.geom_type));
+                }
     };
 
     template <int dim>
@@ -6260,10 +6439,8 @@ namespace CompLimb
            }
 
            if (this->parameters.load_type == "displacement")
-           {
-             AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: " + this->parameters.geom_type));
-           }
-
+           AssertThrow(false, ExcMessage("Displacement loading not defined for the current problem: "
+            + this->parameters.geom_type));
       }
 
       virtual Tensor<1,dim>
@@ -6323,17 +6500,10 @@ namespace CompLimb
       virtual  std::pair<double, FEValuesExtractors::Scalar>
       get_dirichlet_load(const types::boundary_id &boundary_id) const
       {
-            double displ_incr = 0;
-            FEValuesExtractors::Scalar direction;
-
-            if (boundary_id == 100)
-            {
-                if (this->time.get_current() == this->time.get_delta_t())
-                  displ_incr = this->parameters.load;
-
-                direction = this->z_displacement;
-            }
-            return std::make_pair(displ_incr,direction);
+          double displ_incr = 0;
+          FEValuesExtractors::Scalar direction;
+          (void)boundary_id;
+          return std::make_pair(displ_incr,direction);
       }
     };
 }
