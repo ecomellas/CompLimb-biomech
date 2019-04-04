@@ -598,6 +598,7 @@ namespace CompLimb
 // We can choose the frequency of the data for the output files.
       struct OutputParam
       {
+        std::string  outfiles_requested;
         unsigned int timestep_output;
         std::string  outtype;
 
@@ -612,6 +613,9 @@ namespace CompLimb
       {
         prm.enter_subsection("Output parameters");
         {
+          prm.declare_entry("Output files", "all",
+                            Patterns::Selection("none|bcs|solution|all"),
+                            "Paraview output files to generate.");
           prm.declare_entry("Time step number output", "1",
                             Patterns::Integer(0),
                             "Output data for time steps multiple of the given integer value.");
@@ -627,6 +631,7 @@ namespace CompLimb
       {
         prm.enter_subsection("Output parameters");
         {
+          outfiles_requested = prm.get("Output files");
           timestep_output = prm.get_integer("Time step number output");
           outtype = prm.get("Averaged results");
         }
@@ -1778,9 +1783,9 @@ namespace CompLimb
             void output_results_to_vtu( const unsigned int timestep,
                                         const double current_time,
                                         TrilinosWrappers::MPI::BlockVector solution) const;
-            void output_loading_to_vtu( const unsigned int timestep,
-                                        const double current_time,
-                                        TrilinosWrappers::MPI::BlockVector solution) const;
+            void output_bcs_to_vtu( const unsigned int timestep,
+                                    const double current_time,
+                                    TrilinosWrappers::MPI::BlockVector solution) const;
             void output_results_to_plot( const unsigned int timestep,
                                          const double current_time,
                                          TrilinosWrappers::MPI::BlockVector solution,
@@ -2021,12 +2026,28 @@ namespace CompLimb
           }
 
           //Print results to output file
-          output_results_to_vtu( time.get_timestep(),
-                                 time.get_current(),
-                                 solution_n           );
-          output_loading_to_vtu( time.get_timestep(),
-                                 time.get_current(),
-                                 solution_n           );
+          if (parameters.outfiles_requested == "all")
+          {
+                output_results_to_vtu( time.get_timestep(),
+                                       time.get_current(),
+                                       solution_n           );
+                output_bcs_to_vtu( time.get_timestep(),
+                                   time.get_current(),
+                                   solution_n           );
+          }
+          else if (parameters.outfiles_requested == "solution")
+          {
+                output_results_to_vtu( time.get_timestep(),
+                                       time.get_current(),
+                                       solution_n           );
+          }
+          else if (parameters.outfiles_requested == "bcs")
+          {
+                output_bcs_to_vtu( time.get_timestep(),
+                            time.get_current(),
+                            solution_n           );
+          }
+
           output_results_to_plot( time.get_timestep(),
                                   time.get_current(),
                                   solution_n,
@@ -2067,18 +2088,34 @@ namespace CompLimb
               //Output results
               if ( ( time.get_timestep() % parameters.timestep_output ) == 0 )
               {
-                output_results_to_vtu( time.get_timestep(),
-                                       time.get_current(),
-                                       solution_n           );
-                output_loading_to_vtu( time.get_timestep(),
-                                       time.get_current(),
-                                       solution_n           );
-                output_results_to_plot( time.get_timestep(),
-                                        time.get_current(),
-                                        solution_n,
-                                        tracked_vertices,
-                                        pointfile);
+                if (parameters.outfiles_requested == "all")
+                {
+                      output_results_to_vtu( time.get_timestep(),
+                                             time.get_current(),
+                                             solution_n           );
+                      output_bcs_to_vtu( time.get_timestep(),
+                                         time.get_current(),
+                                         solution_n           );
+                }
+                else if (parameters.outfiles_requested == "solution")
+                {
+                      output_results_to_vtu( time.get_timestep(),
+                                             time.get_current(),
+                                             solution_n           );
+                }
+                else if (parameters.outfiles_requested == "bcs")
+                {
+                      output_bcs_to_vtu( time.get_timestep(),
+                                  time.get_current(),
+                                  solution_n           );
+                }
               }
+
+              output_results_to_plot( time.get_timestep(),
+                                      time.get_current(),
+                                      solution_n,
+                                      tracked_vertices,
+                                      pointfile);
 
               //Increment the time step (=load step)
               time.increment_time();
@@ -3138,7 +3175,9 @@ namespace CompLimb
       Vector<double>solid_vol_fraction_elements (triangulation.n_active_cells());
       Vector<double> growth_stretch_elements (triangulation.n_active_cells());
 
-      // OUTPUT AVERAGED ON NODES ----------------------------------------------.
+      // OUTPUT AVERAGED ON NODES ----------------------------------------------
+      // We need to create a new FE space with a single dof per node to avoid
+      // duplication of the output on nodes for our problem with dim+1 dofs.
       FE_Q<dim>       fe_vertex(1);
       DoFHandler<dim> vertex_handler_ref(triangulation);
       vertex_handler_ref.distribute_dofs(fe_vertex);
@@ -3162,6 +3201,8 @@ namespace CompLimb
       Vector<double> solid_vol_fraction_vertex(vertex_handler_ref.n_dofs());
       Vector<double> growth_stretch_vertex(vertex_handler_ref.n_dofs());
 
+      // We need to create a new FE space with a dim dof per node to
+      // be able to ouput data on nodes in vector form
       FESystem        fe_vertex_vec(FE_Q<dim>(1),dim);
       DoFHandler<dim> vertex_vec_handler_ref(triangulation);
       vertex_vec_handler_ref.distribute_dofs(fe_vertex_vec);
@@ -3304,6 +3345,10 @@ namespace CompLimb
                 lqph[q_point]->get_converged_growth_stretch();
 
               // OUTPUT AVERAGED ON ELEMENTS -------------------------------------------
+              // Both average on elements and on nodes is NOT weighted with the
+              // integration point volume, i.e., we assume equal contribution of each
+              // integration point to the average. Ideally, it should be weighted,
+              // but I haven't invested time in getting it to work properly.
               if (parameters.outtype == "elements")
               {
                   for (unsigned int j=0; j<dim; ++j)
@@ -3345,7 +3390,6 @@ namespace CompLimb
               // OUTPUT AVERAGED ON NODES -------------------------------------------
               else if (parameters.outtype == "nodes")
               {
-
                 for (unsigned int v=0; v<(GeometryInfo<dim>::vertices_per_cell); ++v)
                 {
                     types::global_dof_index local_vertex_indices = cell_v->vertex_dof_index(v, 0);
@@ -3394,6 +3438,9 @@ namespace CompLimb
           } //end gauss point loop
       }//end cell loop
 
+      // Different nodes might have different amount of contributions, e.g.,
+      // corner nodes have less integration points contributing to the averaged.
+      // This is why we need a counter and divide at the end, outside the cell loop.
       if (parameters.outtype == "nodes")
       {
         for (unsigned int j=0; j<(vertex_handler_ref.n_dofs()); ++j)
@@ -3598,11 +3645,13 @@ namespace CompLimb
         DataOutBase::write_pvd_record (pvd_output, time_and_name_history);
       }
     }
-    //Print results to vtu file
+    //Print boundary conditions to vtu file
+    //This function os analogous to the output_results_to_vtu function,
+    // except that we only print to file the surface information.
     template <int dim>
-    void Solid<dim>::output_loading_to_vtu(const unsigned int timestep,
-                                           const double current_time,
-                                           TrilinosWrappers::MPI::BlockVector solution_IN) const
+    void Solid<dim>::output_bcs_to_vtu(const unsigned int timestep,
+                                       const double current_time,
+                                       TrilinosWrappers::MPI::BlockVector solution_IN) const
     {
       TrilinosWrappers::MPI::BlockVector solution_total ( locally_owned_partitioning,
                                                           locally_relevant_partitioning,
@@ -3716,7 +3765,6 @@ namespace CompLimb
                               += traction[j]/n_q_points_f;
                         }
                     }
-
                     // OUTPUT AVERAGED ON NODES -------------------------------------------
                     else if (parameters.outtype == "nodes")
                     {
@@ -3746,7 +3794,6 @@ namespace CompLimb
 
       FilteredDataOutFaces<dim> data_out_face(this_mpi_process);
 
-      //std::vector<std::string> face_name(1,"loading");
       std::vector<DataComponentInterpretation::DataComponentInterpretation>
         face_comp_type(dim,
                        DataComponentInterpretation::component_is_part_of_vector);
@@ -3791,7 +3838,7 @@ namespace CompLimb
         {
           std::ostringstream filename_face_vtu;
           filename_face_vtu
-          << "loading."
+          << "bcs."
           << Utilities::int_to_string (process, n_digits)
           << "."
           << Utilities::int_to_string(timestep, n_digits)
@@ -3804,7 +3851,7 @@ namespace CompLimb
         {
           std::ostringstream filename_face_vtu;
           filename_face_vtu
-          << "loading."
+          << "bcs."
           << Utilities::int_to_string(timestep, n_digits)
           << ".pvtu";
           return filename_face_vtu.str();
@@ -3814,7 +3861,7 @@ namespace CompLimb
         {
           std::ostringstream filename_face_vtu;
           filename_face_vtu
-          << "loading.pvd";
+          << "bcs.pvd";
           return filename_face_vtu.str();
         }
       };
@@ -3866,9 +3913,7 @@ namespace CompLimb
       (void) timestep;
       solution_total = solution_IN;
       Vector<double> material_id;
-    //  Vector<double> polynomial_order;
       material_id.reinit(triangulation.n_active_cells());
-    //  polynomial_order.reinit(triangulation.n_active_cells());
       std::vector<types::subdomain_id> partition_int (triangulation.n_active_cells());
 
       //Variables needed to print the solution file for plotting
