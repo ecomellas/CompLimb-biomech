@@ -207,6 +207,7 @@ subsection Output parameters
   # Output data every given time step number
   set Time step number output    = 1
   
-  # Output data associated with integration point values averaged on elements or on nodes
-  set Averaged results           = elements
+  # Output data associated with integration point values averaged on:  elements | nodes
+  set Averaged results           = nodes
+  
 end

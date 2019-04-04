@@ -3099,103 +3099,6 @@ namespace CompLimb
           const unsigned int  p_fluid_component;
     };
 
-//Example using DataPostprocessorTensor to have inf. strains averaged on nodes.
-// https://www.dealii.org/developer/doxygen/deal.II/classDataPostprocessorTensor.html
-/*
-    template <int dim>
-    class StrainPostprocessor : public DataPostprocessorTensor<dim>
-    {
-    public:
-      StrainPostprocessor ()
-        :
-        DataPostprocessorTensor<dim> ("strain",
-                                      update_gradients)
-      {}
-
-      virtual ~StrainPostprocessor(){}
-
-      virtual void
-      evaluate_vector_field(
-        const DataPostprocessorInputs::Vector<dim> &input_data,
-        std::vector<Vector<double> >               &computed_quantities) const
-      {
-        AssertDimension (input_data.solution_gradients.size(),
-                         computed_quantities.size());
-        for (unsigned int p=0; p<input_data.solution_gradients.size(); ++p)
-          {
-            AssertDimension (computed_quantities[p].size(),
-                             (Tensor<2,dim>::n_independent_components));
-            for (unsigned int d=0; d<dim; ++d)
-              for (unsigned int e=0; e<dim; ++e)
-                computed_quantities[p][Tensor<2,dim>::component_to_unrolled_index(TableIndices<2>(d,e))]
-                  = (input_data.solution_gradients[p][d][e]
-                     +
-                     input_data.solution_gradients[p][e][d]) / 2;
-          }
-      }
-    };
-*/
-
-/* Trying to compute stresses averaged on nodes using DataPostprocessorTensor
-        template <int dim>
-        class StressPostprocessor : public DataPostprocessorTensor<dim>
-        {
-        public:
-          StressPostprocessor(const unsigned int p_fluid_component)
-            :
-            DataPostprocessorTensor<dim> ("stress",
-                                          update_gradients),
-            p_fluid_component(p_fluid_component)
-          {}
-
-          virtual ~StressPostprocessor(){}
-
-          virtual void
-          evaluate_vector_field(
-            const DataPostprocessorInputs::Vector<dim> &input_data,
-            std::vector<Vector<double> >               &computed_quantities) const
-          {
-            AssertDimension (input_data.solution_gradients.size(),
-                             computed_quantities.size());
-            for (unsigned int p=0; p<input_data.solution_gradients.size(); ++p)
-              {
-                AssertDimension (computed_quantities[p].size(),
-                                 (Tensor<2,dim>::n_independent_components));
-
-              //Compute deformation gradient tensor
-               Tensor<2, dim> grad_u;
-               for (unsigned int d=0; d<dim; ++d)
-                 for (unsigned int e=0; e<dim; ++e)
-                    grad_u[d][e] = input_data.solution_gradients[p][d][e];
-
-                Tensor<2, dim> F = Physics::Elasticity::Kinematics::F(grad_u);
-
-   //Now I need the growth tensor to compute the stresses:
-   // lqph = quadrature_point_history.get_data(cell);
-   // Fg = lqph[q_point]->get_non_converged_growth_tensor();
-   // Fg_inv = invert(Fg);
-   // Fve = F * Fg_inv;
-   // sigma_E = lqph[q_point]->get_Cauchy_E(F);
-   // sigma_fluid_vol (I);
-   // sigma_fluid_vol *= -p_fluid;
-   // sigma = sigma_E + sigma_fluid_vol;
-
-    //But all this info is stored at each gauss point. how can I project it
-    //to the nodes? How can I define the right material?
-    //Maybe it should be done outside the function and
-    //passed into here as a vector?
-                for (unsigned int d=0; d<dim; ++d)
-                  for (unsigned int e=0; e<dim; ++e)
-                    computed_quantities[p][Tensor<2,dim>::component_to_unrolled_index(TableIndices<2>(d,e))]
-                      = F[d][e];
-              }
-          }
-
-          private:
-            const unsigned int  p_fluid_component;
-        };
-*/
-
     //Print results to vtu file
     template <int dim>
     void Solid<dim>::output_results_to_vtu(const unsigned int timestep,
@@ -3211,10 +3114,6 @@ namespace CompLimb
       material_id.reinit(triangulation.n_active_cells());
       std::vector<types::subdomain_id> partition_int (triangulation.n_active_cells());
       GradientPostprocessor<dim> gradient_postprocessor (p_fluid_component);
-    //Example using DataPostprocessorTensor to compute infinitesimal strains, copied from:
-    // https://www.dealii.org/developer/doxygen/deal.II/classDataPostprocessorTensor.html
-    //            StrainPostprocessor<dim> strain_postprocessor;
-    //            StressPostprocessor<dim> stress_postprocessor (p_fluid_component);
 
        //Declare local variables with number of stress components
        //& assign value according to "dim" value
@@ -3229,25 +3128,24 @@ namespace CompLimb
         cauchy_stresses_E_elements (num_comp_symm_tensor,
                                     Vector<double> (triangulation.n_active_cells()));
       std::vector<Vector<double>>
-        cauchy_stresses_p_elements (num_comp_symm_tensor,
-                                    Vector<double> (triangulation.n_active_cells()));
-      std::vector<Vector<double>>
         stretches_elements (dim,
                             Vector<double> (triangulation.n_active_cells()));
       std::vector<Vector<double>>
         seepage_velocity_elements (dim,
                                    Vector<double> (triangulation.n_active_cells()));
-      Vector<double >porous_dissipation_elements (triangulation.n_active_cells());
-      Vector<double >viscous_dissipation_elements (triangulation.n_active_cells());
-      Vector<double >solid_vol_fraction_elements (triangulation.n_active_cells());
+      Vector<double>porous_dissipation_elements (triangulation.n_active_cells());
+      Vector<double>viscous_dissipation_elements (triangulation.n_active_cells());
+      Vector<double>solid_vol_fraction_elements (triangulation.n_active_cells());
       Vector<double> growth_stretch_elements (triangulation.n_active_cells());
 
       // OUTPUT AVERAGED ON NODES ----------------------------------------------.
-      FE_Q<dim>       fe_vertex (1);
+      FE_Q<dim>       fe_vertex(1);
       DoFHandler<dim> vertex_handler_ref(triangulation);
-      vertex_handler_ref.distribute_dofs (fe_vertex);
+      vertex_handler_ref.distribute_dofs(fe_vertex);
       AssertThrow(vertex_handler_ref.n_dofs() == triangulation.n_vertices(),
             ExcDimensionMismatch(vertex_handler_ref.n_dofs(),triangulation.n_vertices()));
+
+      Vector<double>  counter_on_vertices(vertex_handler_ref.n_dofs());
 
       std::vector<Vector<double>>
         cauchy_stresses_total_vertex(num_comp_symm_tensor,
@@ -3256,30 +3154,27 @@ namespace CompLimb
         cauchy_stresses_E_vertex(num_comp_symm_tensor,
                                  Vector<double>(vertex_handler_ref.n_dofs()));
       std::vector<Vector<double>>
-        cauchy_stresses_p_vertex(num_comp_symm_tensor,
-                                 Vector<double>(vertex_handler_ref.n_dofs()));
-      std::vector<Vector<double>>
         stretches_vertex(dim,
                          Vector<double>(vertex_handler_ref.n_dofs()));
-      std::vector<Vector<double>>
-      seepage_velocity_vertex(dim,
-                              Vector<double>(vertex_handler_ref.n_dofs()));
 
       Vector<double> porous_dissipation_vertex(vertex_handler_ref.n_dofs());
       Vector<double> viscous_dissipation_vertex(vertex_handler_ref.n_dofs());
       Vector<double> solid_vol_fraction_vertex(vertex_handler_ref.n_dofs());
       Vector<double> growth_stretch_vertex(vertex_handler_ref.n_dofs());
 
-      Vector<double> mass_matrix_postpro_vertex(vertex_handler_ref.n_dofs());
-      std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+      FESystem        fe_vertex_vec(FE_Q<dim>(1),dim);
+      DoFHandler<dim> vertex_vec_handler_ref(triangulation);
+      vertex_vec_handler_ref.distribute_dofs(fe_vertex_vec);
+      AssertThrow(vertex_vec_handler_ref.n_dofs() == (dim*triangulation.n_vertices()),
+            ExcDimensionMismatch(vertex_vec_handler_ref.n_dofs(),(dim*triangulation.n_vertices())));
+      Vector<double> seepage_velocity_vertex_vec(vertex_vec_handler_ref.n_dofs());
+      Vector<double> counter_on_vertices_vec(vertex_vec_handler_ref.n_dofs());
       // -----------------------------------------------------------------------
 
       //Declare and initialize local unit vectors (to construct tensor basis)
       std::vector<Tensor<1,dim> > basis_vectors (dim, Tensor<1,dim>() );
       for (unsigned int i=0; i<dim; ++i)
-      {
           basis_vectors[i][i] = 1;
-      }
 
       //Declare an instance of the material class object
       if (parameters.mat_type == "Neo-Hooke")
@@ -3337,9 +3232,10 @@ namespace CompLimb
       FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
         cell (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.begin_active()),
         endc (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.end()),
-        cell_v (IteratorFilters::SubdomainEqualTo(this_mpi_process), vertex_handler_ref.begin_active());
+        cell_v (IteratorFilters::SubdomainEqualTo(this_mpi_process), vertex_handler_ref.begin_active()),
+        cell_v_vec (IteratorFilters::SubdomainEqualTo(this_mpi_process), vertex_vec_handler_ref.begin_active());
       //start cell loop
-      for (; cell!=endc; ++cell, ++cell_v)
+      for (; cell!=endc; ++cell, ++cell_v, ++cell_v_vec)
       {
           if (cell->subdomain_id() != this_mpi_process) continue;
           material_id(cell->active_cell_index()) = static_cast<int>(cell->material_id());
@@ -3355,10 +3251,6 @@ namespace CompLimb
           std::vector<Tensor<1,dim>> solution_grads_p_fluid_AD (n_q_points);
           fe_values_ref[p_fluid_fe].get_function_gradients(solution_total, solution_grads_p_fluid_AD);
 
-          // OUTPUT AVERAGED ON NODES ----------------------------------------------
-          cell->get_dof_indices(local_dof_indices);
-          // -----------------------------------------------------------------------
-
           //start gauss point loop
           for (unsigned int q_point = 0; q_point < n_q_points; ++q_point)
           {
@@ -3372,7 +3264,6 @@ namespace CompLimb
               Assert(lqph.size() == n_q_points, ExcInternalError());
 
               const double p_fluid = solution_values_p_fluid_total[q_point];
-              double JxW = fe_values_ref.JxW(q_point);
 
               //Cauchy stress
               static const SymmetricTensor< 2, dim, double>
@@ -3417,120 +3308,122 @@ namespace CompLimb
               {
                   for (unsigned int j=0; j<dim; ++j)
                   {
-                      cauchy_stresses_total_elements[j][cell->active_cell_index()]
+                      cauchy_stresses_total_elements[j](cell->active_cell_index())
                         += ((sigma * basis_vectors[j])* basis_vectors[j])/n_q_points;
-                      cauchy_stresses_E_elements[j][cell->active_cell_index()]
+                      cauchy_stresses_E_elements[j](cell->active_cell_index())
                         += ((sigma_E * basis_vectors[j])* basis_vectors[j])/n_q_points;
-                      cauchy_stresses_p_elements[j][cell->active_cell_index()]
-                        += ((sigma_fluid_vol * basis_vectors[j])* basis_vectors[j])/n_q_points;
-                      stretches_elements[j][cell->active_cell_index()]
+                      stretches_elements[j](cell->active_cell_index())
                         += std::sqrt(1.0+2.0*Tensor<0,dim,double>(E_strain[j][j]))/n_q_points;
-                      seepage_velocity_elements[j][cell->active_cell_index()]
+                      seepage_velocity_elements[j](cell->active_cell_index())
                         +=  Tensor<0,dim,double>(seepage_vel_AD[j])/n_q_points;
                   }
-
-                  porous_dissipation_elements[cell->active_cell_index()]
-                    +=  porous_dissipation/n_q_points;
-                  viscous_dissipation_elements[cell->active_cell_index()]
-                    +=  viscous_dissipation/n_q_points;
-                  solid_vol_fraction_elements[cell->active_cell_index()]
-                    +=  solid_vol_fraction/n_q_points;
-
-                  growth_stretch_elements[cell->active_cell_index()]
+                  growth_stretch_elements(cell->active_cell_index())
                     += growth_stretch/n_q_points;
 
-                  cauchy_stresses_total_elements[3][cell->active_cell_index()]
-                    += ((sigma * basis_vectors[0])* basis_vectors[1])/n_q_points;
-                  cauchy_stresses_total_elements[4][cell->active_cell_index()]
-                    += ((sigma * basis_vectors[0])* basis_vectors[2])/n_q_points;
+                  porous_dissipation_elements(cell->active_cell_index())
+                    +=  porous_dissipation/n_q_points;
+                  viscous_dissipation_elements(cell->active_cell_index())
+                    +=  viscous_dissipation/n_q_points;
+                  solid_vol_fraction_elements(cell->active_cell_index())
+                    +=  solid_vol_fraction/n_q_points;
 
-                  cauchy_stresses_E_elements[3][cell->active_cell_index()]
-                    += ((sigma_E * basis_vectors[0])* basis_vectors[1])/n_q_points;
-                  cauchy_stresses_E_elements[4][cell->active_cell_index()]
-                    += ((sigma_E * basis_vectors[0])* basis_vectors[2])/n_q_points;
+                  cauchy_stresses_total_elements[3](cell->active_cell_index())
+                    += ((sigma * basis_vectors[0])* basis_vectors[1])/n_q_points; //sig_xy
+                  cauchy_stresses_total_elements[4](cell->active_cell_index())
+                    += ((sigma * basis_vectors[0])* basis_vectors[2])/n_q_points;//sig_xz
+                  cauchy_stresses_total_elements[5](cell->active_cell_index())
+                    += ((sigma * basis_vectors[1])* basis_vectors[2])/n_q_points;//sig_yz
 
-                  cauchy_stresses_p_elements[3][cell->active_cell_index()]
-                    += ((sigma_fluid_vol * basis_vectors[0])* basis_vectors[1])/n_q_points;
-                  cauchy_stresses_p_elements[4][cell->active_cell_index()]
-                    += ((sigma_fluid_vol * basis_vectors[0])* basis_vectors[2])/n_q_points;
+                  cauchy_stresses_E_elements[3](cell->active_cell_index())
+                    += ((sigma_E * basis_vectors[0])* basis_vectors[1])/n_q_points; //sig_xy
+                  cauchy_stresses_E_elements[4](cell->active_cell_index())
+                    += ((sigma_E * basis_vectors[0])* basis_vectors[2])/n_q_points;//sig_xz
+                  cauchy_stresses_E_elements[5](cell->active_cell_index())
+                    += ((sigma * basis_vectors[1])* basis_vectors[2])/n_q_points;//sig_yz
+
               }
               // OUTPUT AVERAGED ON NODES -------------------------------------------
               else if (parameters.outtype == "nodes")
               {
-                for (unsigned int v = 0; v<(GeometryInfo<dim>::vertices_per_cell); ++v)
+
+                for (unsigned int v=0; v<(GeometryInfo<dim>::vertices_per_cell); ++v)
                 {
-                        unsigned int j=v*n_components; //Identify corresponding dof position
-                        types::global_dof_index local_vertex_indices = cell_v->vertex_dof_index(v, 0);
-                        double  Nj= fe_values_ref.shape_value(j, q_point);
+                    types::global_dof_index local_vertex_indices = cell_v->vertex_dof_index(v, 0);
+                    counter_on_vertices(local_vertex_indices) += 1;
+                    for (unsigned int k=0; k<dim; ++k)
+                    {
+                        cauchy_stresses_total_vertex[k](local_vertex_indices)
+                          += (sigma * basis_vectors[k])* basis_vectors[k];
+                        cauchy_stresses_E_vertex[k](local_vertex_indices)
+                          += (sigma_E * basis_vectors[k])* basis_vectors[k];
+                        stretches_vertex[k](local_vertex_indices)
+                          += std::sqrt(1.0+2.0*Tensor<0,dim,double>(E_strain[k][k]));
 
-                        for (unsigned int u=0; u<(GeometryInfo<dim>::vertices_per_cell); ++u)
-                        {
-                              unsigned int k=u*n_components;
-                              if (fe.system_to_component_index(j).first ==
-                                  fe.system_to_component_index(k).first    )
-                              {
-                                  double Nk = fe_values_ref.shape_value(k, q_point);
-                                  mass_matrix_postpro_vertex(local_vertex_indices)
-                                    += (Nj * Nk * JxW);
-                              }
-                        }
+                        types::global_dof_index
+                          local_vertex_vec_indices = cell_v_vec->vertex_dof_index(v, k);
+                        counter_on_vertices_vec(local_vertex_vec_indices) += 1;
+                        seepage_velocity_vertex_vec(local_vertex_vec_indices)
+                          += Tensor<0,dim,double>(seepage_vel_AD[k]);
+                    }
+                    growth_stretch_vertex(local_vertex_indices)
+                      += growth_stretch;
 
-                        for (unsigned int k=0; k<dim; ++k)
-                        {
-                            cauchy_stresses_total_vertex[k][local_vertex_indices]
-                              += Nj*((sigma * basis_vectors[k])* basis_vectors[k])*JxW;
-                            cauchy_stresses_E_vertex[k][local_vertex_indices]
-                              += Nj*((sigma_E * basis_vectors[k])* basis_vectors[k])*JxW;
-                            cauchy_stresses_p_vertex[k][local_vertex_indices]
-                              += Nj*((sigma_fluid_vol * basis_vectors[k])* basis_vectors[k])*JxW;
-                            stretches_vertex[k][local_vertex_indices]
-                              += Nj*(std::sqrt(1.0+2.0*Tensor<0,dim,double>(E_strain[k][k])))*JxW;
-                            seepage_velocity_vertex[k][local_vertex_indices]
-                              += Nj*(Tensor<0,dim,double>(seepage_vel_AD[k]))*JxW;
-                        }
+                    porous_dissipation_vertex(local_vertex_indices)
+                      += porous_dissipation;
+                    viscous_dissipation_vertex(local_vertex_indices)
+                      += viscous_dissipation;
+                    solid_vol_fraction_vertex(local_vertex_indices)
+                      += solid_vol_fraction;
 
-                        porous_dissipation_vertex[local_vertex_indices]
-                          +=  Nj*porous_dissipation*JxW;
-                        viscous_dissipation_vertex[local_vertex_indices]
-                          +=  Nj*viscous_dissipation*JxW;
-                        solid_vol_fraction_vertex[local_vertex_indices]
-                          +=  Nj*solid_vol_fraction*JxW;
+                    cauchy_stresses_total_vertex[3](local_vertex_indices)
+                      += (sigma * basis_vectors[0])* basis_vectors[1]; //sig_xy
+                    cauchy_stresses_total_vertex[4](local_vertex_indices)
+                      += (sigma * basis_vectors[0])* basis_vectors[2];//sig_xz
+                    cauchy_stresses_total_vertex[5](local_vertex_indices)
+                      += (sigma * basis_vectors[1])* basis_vectors[2]; //sig_yz
 
-                        growth_stretch_vertex[local_vertex_indices]
-                          += Nj*growth_stretch*JxW;
-
-                        cauchy_stresses_total_vertex[3][local_vertex_indices]
-                          += Nj*((sigma * basis_vectors[0])* basis_vectors[1])*JxW; //sig_xy
-                        cauchy_stresses_total_vertex[4][local_vertex_indices]
-                          += Nj*((sigma * basis_vectors[0])* basis_vectors[2])*JxW;//sig_xz
-                        cauchy_stresses_total_vertex[5][local_vertex_indices]
-                          += Nj*((sigma * basis_vectors[1])* basis_vectors[2])*JxW; //sig_yz
-
-                        cauchy_stresses_E_vertex[3][local_vertex_indices]
-                          += Nj*((sigma_E * basis_vectors[0])* basis_vectors[1])*JxW; //sig_xy
-                        cauchy_stresses_E_vertex[4][local_vertex_indices]
-                          += Nj*((sigma_E * basis_vectors[0])* basis_vectors[2])*JxW;//sig_xz
-                        cauchy_stresses_E_vertex[5][local_vertex_indices]
-                          += Nj*((sigma_E * basis_vectors[1])* basis_vectors[2])*JxW; //sig_yz
-
-                        cauchy_stresses_E_vertex[3][local_vertex_indices]
-                          += Nj*((sigma_fluid_vol * basis_vectors[0])* basis_vectors[1])*JxW; //sig_xy
-                        cauchy_stresses_total_vertex[4][local_vertex_indices]
-                          += Nj*((sigma_fluid_vol * basis_vectors[0])* basis_vectors[2])*JxW;//sig_xz
-                        cauchy_stresses_total_vertex[5][local_vertex_indices]
-                          += Nj*((sigma_fluid_vol * basis_vectors[1])* basis_vectors[2])*JxW; //sig_yz
+                    cauchy_stresses_E_vertex[3](local_vertex_indices)
+                      += (sigma_E * basis_vectors[0])* basis_vectors[1]; //sig_xy
+                    cauchy_stresses_E_vertex[4](local_vertex_indices)
+                      += (sigma_E * basis_vectors[0])* basis_vectors[2];//sig_xz
+                    cauchy_stresses_E_vertex[5](local_vertex_indices)
+                      += (sigma_E * basis_vectors[1])* basis_vectors[2]; //sig_yz
                   }
-              }
+            }
             //---------------------------------------------------------------
           } //end gauss point loop
       }//end cell loop
 
+      if (parameters.outtype == "nodes")
+      {
+        for (unsigned int j=0; j<(vertex_handler_ref.n_dofs()); ++j)
+        {
+          if (counter_on_vertices(j)>0)
+          {
+            for (unsigned int i=0; i<num_comp_symm_tensor; ++i)
+            {
+                cauchy_stresses_total_vertex[i](j) /= counter_on_vertices(j);
+                cauchy_stresses_E_vertex[i](j) /= counter_on_vertices(j);
+            }
+            for (unsigned int i=0; i<dim; ++i)
+            {
+                stretches_vertex[i](j) /= counter_on_vertices(j);
+            }
+            seepage_velocity_vertex_vec(j) /= counter_on_vertices_vec(j);
+            growth_stretch_vertex(j) /= counter_on_vertices(j);
+            porous_dissipation_vertex(j) /= counter_on_vertices(j);
+            viscous_dissipation_vertex(j) /= counter_on_vertices(j);
+            solid_vol_fraction_vertex(j) /= counter_on_vertices(j);
+          }
+        }
+      }
+
       // Add the results to the solution to create the output file for Paraview
       FilteredDataOut<dim> data_out(this_mpi_process);
       std::vector<DataComponentInterpretation::DataComponentInterpretation>
-        data_component_interpretation(dim,
-                                      DataComponentInterpretation::component_is_part_of_vector);
-      data_component_interpretation.push_back(DataComponentInterpretation::component_is_scalar);
+        comp_type(dim,
+                  DataComponentInterpretation::component_is_part_of_vector);
+      comp_type.push_back(DataComponentInterpretation::component_is_scalar);
 
       GridTools::get_subdomain_association (triangulation, partition_int);
 
@@ -3541,18 +3434,10 @@ namespace CompLimb
       data_out.add_data_vector(solution_total,
                                solution_name,
                                DataOut<dim>::type_dof_data,
-                               data_component_interpretation);
+                               comp_type);
 
       data_out.add_data_vector (solution_total,
                                 gradient_postprocessor);
-
-    //Example using DataPostprocessorTensor to compute infinitesimal strains, copied from:
-    // https://www.dealii.org/developer/doxygen/deal.II/classDataPostprocessorTensor.html
-    //            data_out.add_data_vector (solution_total,
-    //                                      strain_postprocessor);
-
-    //            data_out.add_data_vector (solution_total,
-    //                                      stress_postprocessor);
 
       const Vector<double> partitioning(partition_int.begin(),
                                         partition_int.end());
@@ -3577,13 +3462,6 @@ namespace CompLimb
         data_out.add_data_vector (cauchy_stresses_E_elements[4], "cauchy_E_xz");
         data_out.add_data_vector (cauchy_stresses_E_elements[5], "cauchy_E_yz");
 
-        data_out.add_data_vector (cauchy_stresses_p_elements[0], "cauchy_p_xx");
-        data_out.add_data_vector (cauchy_stresses_p_elements[1], "cauchy_p_yy");
-        data_out.add_data_vector (cauchy_stresses_p_elements[2], "cauchy_p_zz");
-        data_out.add_data_vector (cauchy_stresses_p_elements[3], "cauchy_p_xy");
-        data_out.add_data_vector (cauchy_stresses_p_elements[4], "cauchy_p_xz");
-        data_out.add_data_vector (cauchy_stresses_p_elements[5], "cauchy_p_yz");
-
         data_out.add_data_vector (stretches_elements[0], "stretch_xx");
         data_out.add_data_vector (stretches_elements[1], "stretch_yy");
         data_out.add_data_vector (stretches_elements[2], "stretch_zz");
@@ -3599,16 +3477,6 @@ namespace CompLimb
       }
       else if  (parameters.outtype == "nodes")
       {
-        for (unsigned int i = 0; i < mass_matrix_postpro_vertex.size(); ++i)
-            mass_matrix_postpro_vertex(i) = 1. / mass_matrix_postpro_vertex(i);
-
-        for (unsigned int i=0; i<num_comp_symm_tensor; ++i)
-        {
-            cauchy_stresses_total_vertex[i].scale(mass_matrix_postpro_vertex);
-            cauchy_stresses_E_vertex[i].scale(mass_matrix_postpro_vertex);
-            cauchy_stresses_p_vertex[i].scale(mass_matrix_postpro_vertex);
-        }
-
         data_out.add_data_vector (vertex_handler_ref,
                                   cauchy_stresses_total_vertex[0],"cauchy_xx");
         data_out.add_data_vector (vertex_handler_ref,
@@ -3636,42 +3504,22 @@ namespace CompLimb
                                   cauchy_stresses_E_vertex[5],"cauchy_E_yz");
 
         data_out.add_data_vector (vertex_handler_ref,
-                                  cauchy_stresses_p_vertex[0],"cauchy_p_xx");
-        data_out.add_data_vector (vertex_handler_ref,
-                                  cauchy_stresses_p_vertex[1],"cauchy_p_yy");
-        data_out.add_data_vector (vertex_handler_ref,
-                                  cauchy_stresses_p_vertex[2],"cauchy_p_zz");
-        data_out.add_data_vector (vertex_handler_ref,
-                                  cauchy_stresses_p_vertex[3],"cauchy_p_xy");
-        data_out.add_data_vector (vertex_handler_ref,
-                                  cauchy_stresses_p_vertex[4],"cauchy_p_xz");
-        data_out.add_data_vector (vertex_handler_ref,
-                                  cauchy_stresses_p_vertex[5],"cauchy_p_yz");
-
-        data_out.add_data_vector (vertex_handler_ref,
                                   stretches_vertex[0], "stretch_xx");
         data_out.add_data_vector (vertex_handler_ref,
                                   stretches_vertex[1], "stretch_yy");
         data_out.add_data_vector (vertex_handler_ref,
                                   stretches_vertex[2], "stretch_zz");
 
-        data_out.add_data_vector (vertex_handler_ref,
-                                  seepage_velocity_vertex[0], "seepage_vel_x");
-        data_out.add_data_vector (vertex_handler_ref,
-                                  seepage_velocity_vertex[1], "seepage_vel_y");
-        data_out.add_data_vector (vertex_handler_ref,
-                                  seepage_velocity_vertex[2], "seepage_vel_z");
-
-/*
         std::vector<DataComponentInterpretation::DataComponentInterpretation>
-          data_component_int(dim,
-                             DataComponentInterpretation::component_is_part_of_vector);
-        std::vector<std::string> sol_name(dim, "seepage_velocity");
-        data_out.add_data_vector(vertex_handler_ref,
-                                 seepage_velocity_vertex,
-                                 sol_name,
-                                 data_component_int);
-*/
+         comp_type_vec(dim,
+                       DataComponentInterpretation::component_is_part_of_vector);
+        std::vector<std::string> solution_name_vec(dim, "seepage_velocity");
+
+        data_out.add_data_vector(vertex_vec_handler_ref,
+                                 seepage_velocity_vertex_vec,
+                                 solution_name_vec,
+                                 comp_type_vec);
+
         data_out.add_data_vector (vertex_handler_ref,
                                   growth_stretch_vertex, "growth_stretch");
         data_out.add_data_vector (vertex_handler_ref,
@@ -3767,15 +3615,16 @@ namespace CompLimb
       //Declare local vectors to store values
       // OUTPUT AVERAGED ON ELEMENTS -------------------------------------------
       std::vector<Vector<double>>
-        load_on_faces(dim,
-                      Vector<double> (triangulation.n_active_cells()));
-
+        loads_faces(dim,
+                    Vector<double> (triangulation.n_active_cells()));
       // OUTPUT AVERAGED ON NODES ----------------------------------------------
-      std::vector<Vector<double>>
-        load_on_nodes(dim,
-                      Vector<double>(dof_handler_ref.n_dofs()));
-      std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-      Vector<double> mass_matrix_postprocessing(dof_handler_ref.n_dofs());
+      FESystem        fe_vertex_vec(FE_Q<dim>(1),dim);
+      DoFHandler<dim> vertex_vec_handler_ref(triangulation);
+      vertex_vec_handler_ref.distribute_dofs(fe_vertex_vec);
+      AssertThrow(vertex_vec_handler_ref.n_dofs() == (dim*triangulation.n_vertices()),
+            ExcDimensionMismatch(vertex_vec_handler_ref.n_dofs(),(dim*triangulation.n_vertices())));
+      Vector<double> loads_vertex_vec(vertex_vec_handler_ref.n_dofs());
+      Vector<double> counter_on_vertices_vec(vertex_vec_handler_ref.n_dofs());
       // -----------------------------------------------------------------------
 
       //Declare an instance of the material class object
@@ -3826,13 +3675,13 @@ namespace CompLimb
       else
           Assert (false, ExcMessage("Material type not implemented"));
 
-
       //Iterate through elements (cells) and Gauss Points
       FilteredIterator<typename DoFHandler<dim>::active_cell_iterator>
         cell (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.begin_active()),
-        endc (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.end());
+        endc (IteratorFilters::SubdomainEqualTo(this_mpi_process), dof_handler_ref.end()),
+        cell_v_vec (IteratorFilters::SubdomainEqualTo(this_mpi_process), vertex_vec_handler_ref.begin_active());
       //start cell loop
-      for (; cell!=endc; ++cell)
+      for (; cell!=endc; ++cell, ++cell_v_vec)
       {
           if (cell->subdomain_id() != this_mpi_process) continue;
           material_id(cell->active_cell_index()) = static_cast<int>(cell->material_id());
@@ -3863,7 +3712,7 @@ namespace CompLimb
                     {
                         for (unsigned int j=0; j<dim; ++j)
                         {
-                            load_on_faces[j][cell->active_cell_index()]
+                            loads_faces[j](cell->active_cell_index())
                               += traction[j]/n_q_points_f;
                         }
                     }
@@ -3871,92 +3720,67 @@ namespace CompLimb
                     // OUTPUT AVERAGED ON NODES -------------------------------------------
                     else if (parameters.outtype == "nodes")
                     {
-                        const double JxW_f = fe_face_values_ref.JxW(f_q_point);
-
-                        //For-loop to calculate loading value at each node
-                        for (unsigned int j=0; j<(dofs_per_cell); ++j)
-                        {
-                            //Return for DOF "j" the number (type) of the base element (u or p) it is
-                            const unsigned int j_group = fe.system_to_base_index(j).first.first;
-
-                            //For DOF belonging to displacement variables, select only first component
-                            if (j_group == u_block)
-                            {
-                                const unsigned int component_j = fe.system_to_component_index(j).first;
-                                double  Nj_f= fe_face_values_ref.shape_value(j, f_q_point);
-
-                                for (unsigned int k=0; k<(dofs_per_cell); k++)
-                                {
-                                      if (fe.system_to_component_index(j).first ==
-                                          fe.system_to_component_index(k).first    )
-                                      {
-                                          double Nk_f = fe_face_values_ref.shape_value(k, f_q_point);
-                                          mass_matrix_postprocessing(local_dof_indices[j])
-                                            += (Nj_f * Nk_f * JxW_f);
-                                      }
-                                }
-
-                                for (unsigned int k=0; k<dim; ++k)
-                                {
-                                      load_on_nodes[k][local_dof_indices[j]]
-                                      += traction[component_j]*JxW_f;
-                                }
-                            }
-                        }
+                      for (unsigned int v=0; v<(GeometryInfo<dim>::vertices_per_face); ++v)
+                      {
+                          for (unsigned int k=0; k<dim; ++k)
+                          {
+                            types::global_dof_index
+                              local_vertex_vec_indices = cell_v_vec->face(face)->vertex_dof_index(v, k);
+                            counter_on_vertices_vec(local_vertex_vec_indices) += 1;
+                            loads_vertex_vec(local_vertex_vec_indices) += traction[k];
+                          }
+                       }
                     }
                     //--------------------------------------------------------------
                   }//end gauss point loop
-            }//if face is in boundary
+            }//end if face is in boundary
         }//end face loop
       }//end cell loop
+
+      if (parameters.outtype == "nodes")
+      {
+          for (unsigned int j=0; j<(vertex_vec_handler_ref.n_dofs()); ++j)
+              if (counter_on_vertices_vec(j)>0)
+                loads_vertex_vec(j) /= counter_on_vertices_vec(j);
+      }
 
       FilteredDataOutFaces<dim> data_out_face(this_mpi_process);
 
       //std::vector<std::string> face_name(1,"loading");
       std::vector<DataComponentInterpretation::DataComponentInterpretation>
-        face_component_type(dim,
-                            DataComponentInterpretation::component_is_part_of_vector);
-      face_component_type.push_back(DataComponentInterpretation::component_is_scalar);
+        face_comp_type(dim,
+                       DataComponentInterpretation::component_is_part_of_vector);
+      face_comp_type.push_back(DataComponentInterpretation::component_is_scalar);
 
-      std::vector<std::string> solution_face_name(dim, "displacement");
-      solution_face_name.push_back("pore_pressure");
+      std::vector<std::string> ouput_name_face(dim, "displacement");
+      ouput_name_face.push_back("pore_pressure");
 
       data_out_face.attach_dof_handler(dof_handler_ref);
       data_out_face.add_data_vector(solution_total,
-                                    solution_face_name,
+                                    ouput_name_face,
                                     DataOutFaces<dim>::type_dof_data,
-                                    face_component_type);
+                                    face_comp_type);
 
       // Integration point results -----------------------------------------------------------
       if (parameters.outtype == "elements")
       {
-      /*  std::vector<DataComponentInterpretation::DataComponentInterpretation>
-          face_component_type_bis(dim,
-                                  DataComponentInterpretation::component_is_part_of_vector);
-        std::vector<std::string> solution_face_name_bis(dim, "load");
-        data_out_face.add_data_vector( load_on_faces,
-                                       solution_face_name_bis,
-                                       DataOutFaces<dim>::type_cell_data,
-                                       face_component_type_bis);
-      */
-        data_out_face.add_data_vector (load_on_faces[0], "load_x");
-        data_out_face.add_data_vector (load_on_faces[1], "load_y");
-        data_out_face.add_data_vector (load_on_faces[2], "load_z");
+        data_out_face.add_data_vector (loads_faces[0], "load_x");
+        data_out_face.add_data_vector (loads_faces[1], "load_y");
+        data_out_face.add_data_vector (loads_faces[2], "load_z");
       }
       else if  (parameters.outtype == "nodes")
       {
-        for (unsigned int i = 0; i < mass_matrix_postprocessing.size(); ++i)
-            mass_matrix_postprocessing(i) = 1 / mass_matrix_postprocessing(i);
+        std::vector<DataComponentInterpretation::DataComponentInterpretation>
+         face_comp_type_vec(dim,
+                            DataComponentInterpretation::component_is_part_of_vector);
+        std::vector<std::string> ouput_name_face_vec(dim, "load");
 
-        for (unsigned int i=0; i<dim; ++i)
-            load_on_nodes[i].scale(mass_matrix_postprocessing);
-
-        data_out_face.add_data_vector (load_on_nodes[0], "load_x");
-        data_out_face.add_data_vector (load_on_nodes[1], "load_y");
-        data_out_face.add_data_vector (load_on_nodes[2], "load_z");
+        data_out_face.add_data_vector(vertex_vec_handler_ref,
+                                      loads_vertex_vec,
+                                      ouput_name_face_vec,
+                                      face_comp_type_vec);
       }
     //---------------------------------------------------------------------
-
       data_out_face.build_patches (degree_displ);
 
       struct Filename_faces
@@ -4024,8 +3848,8 @@ namespace CompLimb
         std::ofstream pvd_output_face(filename_face_pvd.c_str());
         DataOutBase::write_pvd_record(pvd_output_face, time_and_name_history_face);
       }
-
     }
+
     //Print results to plotting file
     template <int dim>
     void Solid<dim>::output_results_to_plot(const unsigned int timestep,
@@ -4853,7 +4677,7 @@ namespace CompLimb
             {
               if (boundary_id == 100)
               {
-                return this->parameters.load * N;
+                return ((this->parameters.load)*N);
               }
             }
 
@@ -6457,14 +6281,13 @@ namespace CompLimb
           const double d_phi_load = PI/6.;  //radius of load surface in polar direction
           const double theta_load = 0.;     //Azimuthal angle of center of loading position
           const double d_theta_load = PI/6.; //radius of load surface in azimuthal direction
-          const JointLoadingPattern<dim> loading_pattern( phi_load,
-                                                          d_phi_load,
-                                                          theta_load,
-                                                          d_theta_load);
+          const JointLoadingPattern<dim> loading_pattern(phi_load,
+                                                         d_phi_load,
+                                                         theta_load,
+                                                         d_theta_load);
 
         //  if (boundary_id == 1) //Cylindrical surface
         //  else if (boundary_id == 2) //Spherical surface
-
           if (boundary_id == 2)
           {
               load_vector = loading_pattern.value({pt[0],pt[1],pt[2]})
