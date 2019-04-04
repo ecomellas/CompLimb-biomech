@@ -5501,8 +5501,7 @@ namespace CompLimb
           //0 for the hull of the cylinder, 1 for the left hand face and 2 for the right hand face.
 
          //Rotate cylinder so that it is aligned with the z-axis
-         const double PI = 3.141592653589793;
-         const double rot_angle = 3.0*PI/2.0;
+         const double rot_angle = 3.0*numbers::PI/2.0;
          GridTools::rotate( rot_angle, 1, this->triangulation);
          // Hull of cylinder = drained boundary        --> 0
          // Left hand face is now bottom face = fixed  --> 1
@@ -5663,8 +5662,7 @@ namespace CompLimb
           //The manifold id for the curved boundary is set to zero, and a SphericalManifold is attached to it.
 
           //Rotate half-sphere so that it is perpendicular to the z-axis
-          const double PI = 3.141592653589793;
-          const double rot_angle = 3.0*PI/2.0;
+          const double rot_angle = 3.0*(numbers::PI)/2.0;
           GridTools::rotate( rot_angle, 1, this->triangulation);
 
           //Elongate half-sphere in the x direction.
@@ -5675,7 +5673,7 @@ namespace CompLimb
 
 
          //Set area for constraint
-         double cirumf = PI * radius;
+         double cirumf = (numbers::PI)*radius;
          double x_plane_fix = 0.1*this->parameters.scale;
          double margin = (cirumf*this->parameters.scale)/(4 * this->parameters.global_refinement);
 
@@ -6106,8 +6104,8 @@ namespace CompLimb
     };
 
     template <int dim>
-    double JointLoadingPattern<dim>::svalue( const std::array<double,dim> &sp,
-                                             const unsigned int /*component*/) const
+    double JointLoadingPattern<dim>::svalue(const std::array<double,dim> &sp,
+                                            const unsigned int /*component*/) const
     {
       double val = 0.0;
       const double &theta = sp[1]; //Azimuthal angle
@@ -6148,8 +6146,7 @@ namespace CompLimb
           //0 for the hull of the cylinder, 1 for the left hand face and 2 for the right hand face.
 
          //Rotate cylinder so that it is aligned with the z-axis
-         const double PI = 3.141592653589793;
-         const double rot_angle = 3.0*PI/2.0;
+         const double rot_angle = 3.0*(numbers::PI)/2.0;
          GridTools::rotate(rot_angle, 1, tria_cylinder);
          const Tensor<1,dim> shift_cylinder({0.0, 0.0, -0.5*cylinder_height});
          GridTools::shift(shift_cylinder, tria_cylinder);
@@ -6321,25 +6318,32 @@ namespace CompLimb
 
         if (this->parameters.load_type == "pressure")
         {
-          const double PI = 3.141592653589793;
-          const double phi_load = PI/3.;       //Polar angle of center of loading position
-          const double d_phi_load = PI/6.;  //radius of load surface in polar direction
-          const double theta_load = 0.;     //Azimuthal angle of center of loading position
-          const double d_theta_load = PI/6.; //radius of load surface in azimuthal direction
-          const JointLoadingPattern<dim> loading_pattern(phi_load,
-                                                         d_phi_load,
-                                                         theta_load,
-                                                         d_theta_load);
-
-        //  if (boundary_id == 1) //Cylindrical surface
-        //  else if (boundary_id == 2) //Spherical surface
-          if (boundary_id == 2)
+          if ( (boundary_id == 1) || (boundary_id == 2) )
           {
-              load_vector = loading_pattern.value({pt[0],pt[1],pt[2]})
+             const double phi_load_min =  (numbers::PI)/3.;        //Polar angle of center of loading position
+             const double phi_load_max =  2.0*(numbers::PI)/3.;
+             const double d_phi_load = (numbers::PI)/12.;   //radius of load surface in polar direction
+             const double theta_load = (numbers::PI)/6.;    //Azimuthal angle of center of loading position
+             const double d_theta_load = (numbers::PI)/12.; //radius of load surface in azimuthal direction
+
+             const double current_time = this->time.get_current();
+             const double final_time   = this->time.get_end();
+             const double num_cycles   = 1.0;
+
+             const double phi_incr = phi_load_max - phi_load_min;
+             const double current_phi_load =
+                  phi_load_min + phi_incr/2.0*(std::sin((numbers::PI)
+                    *(2.0*num_cycles*current_time/final_time + 0.5)));
+
+             const JointLoadingPattern<dim> loading_pattern(current_phi_load,
+                                                            d_phi_load,
+                                                            theta_load,
+                                                            d_theta_load);
+
+             load_vector = loading_pattern.value({pt[0],pt[1],pt[2]})
                               * (this->parameters.load) * N;
           }
         }
-
         return load_vector;
       }
 
@@ -6356,13 +6360,13 @@ namespace CompLimb
       virtual types::boundary_id
       get_reaction_boundary_id_for_output() const
       {
-          return 100;
+          return 1;
       }
 
       virtual  std::pair<types::boundary_id,types::boundary_id>
       get_drained_boundary_id_for_output() const
       {
-          return std::make_pair(101,101);
+          return std::make_pair(1,2);
       }
 
       virtual  std::pair<double, FEValuesExtractors::Scalar>
