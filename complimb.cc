@@ -3384,7 +3384,7 @@ namespace CompLimb
 
     // We need to create a new FE space with a dim dof per node to
     // be able to ouput data on nodes in vector form
-    FESystem fe_vertex_vec(FE_Q<dim>(1),dim);
+    FESystem<dim> fe_vertex_vec(FE_Q<dim>(1),dim);
     DoFHandler<dim> vertex_vec_handler_ref(triangulation);
     vertex_vec_handler_ref.distribute_dofs(fe_vertex_vec);
     AssertThrow(vertex_vec_handler_ref.n_dofs() == (dim*triangulation.n_vertices()),
@@ -3824,7 +3824,7 @@ namespace CompLimb
       loads_faces(dim,
                   Vector<double> (triangulation.n_active_cells()));
     // OUTPUT AVERAGED ON NODES ----------------------------------------------
-    FESystem fe_vertex_vec(FE_Q<dim>(1),dim);
+    FESystem<dim> fe_vertex_vec(FE_Q<dim>(1),dim);
     DoFHandler<dim> vertex_vec_handler_ref(triangulation);
     vertex_vec_handler_ref.distribute_dofs(fe_vertex_vec);
     AssertThrow(vertex_vec_handler_ref.n_dofs()==(dim*triangulation.n_vertices()),
