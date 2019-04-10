@@ -43,6 +43,28 @@ subsection Geometry
 
   # Increase of pressure at drained boundary [Pa] w.r.t. atmospheric pressure
   set Drained pressure    = 0
+  
+  # ===== idealised_half_joint only =====
+  
+  # Joint rudiment dimensions [mm] (this will be multiplied by grid scale above)
+  set Joint length = 1.75 
+  set Joint radius = 0.5
+
+  # Polar angle range and angle width of contact area, all angles given in degrees
+  # 0 deg coincides with positive z-axis direction and corresponds to top of spherical cap
+  set Phi min = 45 
+  set Phi max = 120
+  set Phi width = 10
+  
+  # Azimuthal angle range and angle width of contact area, all angles given in degrees
+  # 0 deg coincides with positive x-axis direction
+  set Theta min = 0 
+  set Theta max = 0
+  set Theta width = 10
+  
+  # Number of loading cycles.  Each cycle follows min-max-min angles in sinusoidal form.
+  set Number of cycles = 1000
+  
 end
 
 
@@ -108,22 +130,26 @@ subsection Material properties
   set viscosity_1       = 3870
 
 
-  # Type of continuum growth: none | morphogen | pressure
-  set growth               = pressure
+  # Type of continuum growth: none | morphogen | pressure | joint
+  set growth               = joint
 
   # ===== Morphogenetic growth only =====
 
   # Morphogenetic growth increment per timestep
-  set growth_incr          = 0.01
+  set growth incr          = 0.01
 
-  # ===== Pressure-driven growth only =====
+  # ===== Pressure-driven or joint growth only =====
 
   # Growth rate
-  set growth_rate_pressure = 5.0e-6
+  set growth rate pressure = 2.0e-6
   
   # Nature of the dependency of growth on pressure (linear, quadratic, etc.)
-  set growth_exponential_pressure = 2.0
+  set growth exponential pressure = 2.0
   
+  # ===== Joint growth only =====
+  
+  # Biological parameters  
+  set growth rate bio = 1.2e-1
   
   # ------------------------ FLUID ----------------------------------
 
@@ -196,18 +222,20 @@ end
 
 subsection Time
   # End time [s]
-  set End time            = 1.0
+  set End time            = 10.0
 
   # Time step size [s]
-  set Time step size      =  0.1
+  set Time step size      =  0.001
 end
 
 
 subsection Output parameters
-  # Output data every given time step number
+  # Paraview output files to generate: none | bcs | solution | all
+  set Output files               = all
+  
+  # Output data every given time step number for Paraview output files ("bcs" and "solution")
   set Time step number output    = 1
   
-  # Output data associated with integration point values averaged on:  elements | nodes
-  set Averaged results           = nodes
-  
+  # For "solution" file output data associated with integration point values averaged on:  elements | nodes
+  set Averaged results           = nodes  
 end
