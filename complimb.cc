@@ -449,7 +449,7 @@ namespace CompLimb
                           "Growth rate for pressure-driven growth");
 
         prm.declare_entry("growth exponential pressure", "1.0",
-                          Patterns::Double(1,100),
+                          Patterns::Double(1e-6,1e+6),
                           "Growth exponential that determines nature of the "
                           "dependency of growth on pressure (linear, quadratic,"
                           " etc.) for pressure-driven growth");
@@ -990,7 +990,7 @@ namespace CompLimb
               double tolerance = 1.0e-6;
               if (p_fluid > tolerance) //Growth only for compressive pressures
                 growth_criterion = growth_rate*
-                                std::pow(p_fluid, (1.0/growth_exponential));
+                                std::pow(p_fluid,growth_exponential);
               else
                 growth_criterion=0.0;
           }
@@ -6507,25 +6507,28 @@ namespace CompLimb
                            constraints,
                            this->fe.component_mask(this->z_displacement) );
 
-         Point<dim> fix_node(0.0, 0.0, -1.25*this->parameters.scale);
+         Point<dim> fix_node(0.0, 0.0,((this->parameters.joint_radius)
+                                        -(this->parameters.joint_length))
+                                      *this->parameters.scale              );
+
          typename DoFHandler<dim>::active_cell_iterator
          cell = this->dof_handler_ref.begin_active(),
          endc = this->dof_handler_ref.end();
          for (; cell != endc; ++cell)
-           for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_cell; ++node)
-           {
-               if (  (abs(cell->vertex(node)[2]-fix_node[2])
-                        <(1.0e-6*this->parameters.scale))  &&
-                     (abs(cell->vertex(node)[0]-fix_node[0])
-                        <(1.0e-6*this->parameters.scale)))
-                  constraints.add_line(cell->vertex_dof_index(node, 0));
+           for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+             if ( cell->face(face)->at_boundary() == true  &&
+                  cell->face(face)->center()[2] == this->parameters.scale*
+                  ((this->parameters.joint_radius)-(this->parameters.joint_length)) )
+               for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
+               {
+                   if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
+                         < (1.0e-6*this->parameters.scale) )
+                      constraints.add_line(cell->vertex_dof_index(node, 0));
 
-               if (  (abs(cell->vertex(node)[2]-fix_node[2])
-                        <(1.0e-6*this->parameters.scale)) &&
-                     (abs(cell->vertex(node)[1]-fix_node[1])
-                        <(1.0e-6*this->parameters.scale)))
-                  constraints.add_line(cell->vertex_dof_index(node, 1));
-           }
+                   if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
+                         < (1.0e-6*this->parameters.scale) )
+                      constraints.add_line(cell->vertex_dof_index(node, 1));
+               }
 
 
          if (this->time.get_timestep() < 2) //Dirichlet BC on pressure nodes
@@ -6614,24 +6617,27 @@ namespace CompLimb
            const double d_theta_load  = (this->parameters.theta_width)
                                           *(numbers::PI)/180.;
 
-           const unsigned int num_cycles   = this->parameters.num_cycles;
+           const unsigned int num_cycles = this->parameters.num_cycles;
            const double current_time = this->time.get_current();
-           const double final_time   = this->time.get_end();
+           const double final_time   = 0.9*(this->time.get_end());
 
-           const double current_phi_load = phi_load_min
-           + (phi_load_max - phi_load_min)*(1.0 - std::sin((numbers::PI)
-                  *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
-           const double current_theta_load = theta_load_min
-           + (theta_load_max - theta_load_min)*(1.0 - std::sin((numbers::PI)
-                  *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
+           if (current_time <= final_time)
+           {
+             const double current_phi_load = phi_load_min
+             + (phi_load_max - phi_load_min)*(1.0 - std::sin((numbers::PI)
+                    *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
+             const double current_theta_load = theta_load_min
+             + (theta_load_max - theta_load_min)*(1.0 - std::sin((numbers::PI)
+                    *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
 
-           const JointLoadingPattern<dim> loading_pattern(current_phi_load,
-                                                          d_phi_load,
-                                                          current_theta_load,
-                                                          d_theta_load);
+             const JointLoadingPattern<dim> loading_pattern(current_phi_load,
+                                                            d_phi_load,
+                                                            current_theta_load,
+                                                            d_theta_load);
 
-           load_vector = loading_pattern.value({pt[0],pt[1],pt[2]})
-                          * (this->parameters.load) * N;
+             load_vector = loading_pattern.value({pt[0],pt[1],pt[2]})
+                           * (this->parameters.load) * N;
+           }
         }
       }
       return load_vector;

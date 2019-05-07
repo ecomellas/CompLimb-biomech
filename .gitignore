@@ -33,7 +33,11 @@
 .settings
 /CMakeFiles
 /run-results
+/RESULTS
 cmake_install.cmake
 CMakeCache.txt
 Makefile
 complimb
+bcs.*
+solution.*
+*.sol

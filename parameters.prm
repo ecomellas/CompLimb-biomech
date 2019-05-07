@@ -27,7 +27,7 @@ subsection Geometry
   set Geometry type       = idealised_half_joint
 
   # Global refinement level (higher value means finer mesh)
-  set Global refinement   = 1
+  set Global refinement   = 2
 
   # Global grid scaling factor (scales geometry size)
   set Grid scale          = 1.0
@@ -36,7 +36,7 @@ subsection Geometry
   set Load type           = pressure
 
   # Value of loading [Pa] for pressure and [mm] for displacements
-  set Load value          = -127.32
+  set Load value          = -1850
 
   # Value of the prescribed fluid flow [mm/s], Q* = w*·N should include + or - sign.
   set Fluid flow value    = 0
@@ -52,19 +52,18 @@ subsection Geometry
 
   # Polar angle range and angle width of contact area, all angles given in degrees
   # 0 deg coincides with positive z-axis direction and corresponds to top of spherical cap
-  set Phi min = 45 
-  set Phi max = 120
-  set Phi width = 10
+  set Phi min = 10 
+  set Phi max = 80
+  set Phi width = 8
   
   # Azimuthal angle range and angle width of contact area, all angles given in degrees
   # 0 deg coincides with positive x-axis direction
-  set Theta min = 0 
-  set Theta max = 0
-  set Theta width = 10
+  set Theta min = 90 
+  set Theta max = 90
+  set Theta width = 20
   
   # Number of loading cycles.  Each cycle follows min-max-min angles in sinusoidal form.
-  set Number of cycles = 1000
-  
+  set Number of cycles = 1
 end
 
 
@@ -141,15 +140,15 @@ subsection Material properties
   # ===== Pressure-driven or joint growth only =====
 
   # Growth rate
-  set growth rate pressure = 2.0e-6
+  set growth rate pressure = 1.5e-3
   
   # Nature of the dependency of growth on pressure (linear, quadratic, etc.)
-  set growth exponential pressure = 2.0
+  set growth exponential pressure = 1.0
   
   # ===== Joint growth only =====
   
   # Biological parameters  
-  set growth rate bio = 1.2e-1
+  set growth rate bio = 5.0e-3
   
   # ------------------------ FLUID ----------------------------------
 
@@ -206,7 +205,7 @@ end
 
 subsection Nonlinear solver
   # Number of Newton-Raphson iterations allowed
-  set Max iterations Newton-Raphson = 10
+  set Max iterations Newton-Raphson = 50
 
   # Force residual tolerance
   set Tolerance force               = 1.0e-6
@@ -222,10 +221,10 @@ end
 
 subsection Time
   # End time [s]
-  set End time            = 10.0
+  set End time            = 1.1e-3
 
   # Time step size [s]
-  set Time step size      =  0.001
+  set Time step size      =  1.0e-4
 end
 
 
