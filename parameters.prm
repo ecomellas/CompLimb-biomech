@@ -52,15 +52,21 @@ subsection Geometry
 
   # Polar angle range and angle width of contact area, all angles given in degrees
   # 0 deg coincides with positive z-axis direction and corresponds to top of spherical cap
-  set Phi min = 10 
-  set Phi max = 80
-  set Phi width = 8
+  set Radius phi min   = 10 
+  set Radius phi max   = 10
+  set Radius phi width = 8
+  set Ulna phi min     = 40 
+  set Ulna phi max     = 40
+  set Ulna phi width   = 8
   
   # Azimuthal angle range and angle width of contact area, all angles given in degrees
   # 0 deg coincides with positive x-axis direction
-  set Theta min = 90 
-  set Theta max = 90
-  set Theta width = 20
+  set Radius theta min   = 90 
+  set Radius theta max   = 90
+  set Radius theta width = 8
+  set Ulna theta min     = 90 
+  set Ulna theta max     = 90
+  set Ulna theta width   = 8
   
   # Number of loading cycles.  Each cycle follows min-max-min angles in sinusoidal form.
   set Number of cycles = 1

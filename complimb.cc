@@ -165,12 +165,18 @@ namespace CompLimb
       double       drained_pressure;
       double       joint_length;
       double       joint_radius;
-      double       phi_min;
-      double       phi_max;
-      double       phi_width;
-      double       theta_min;
-      double       theta_max;
-      double       theta_width;
+      double       radius_phi_min;
+      double       radius_phi_max;
+      double       radius_phi_width;
+      double       ulna_phi_min;
+      double       ulna_phi_max;
+      double       ulna_phi_width;
+      double       radius_theta_min;
+      double       radius_theta_max;
+      double       radius_theta_width;
+      double       ulna_theta_min;
+      double       ulna_stheta_max;
+      double       ulna_theta_width;
       unsigned int num_cycles;
 
       static void
@@ -243,35 +249,77 @@ namespace CompLimb
                            Patterns::Double(0,1e6),
                            "Joint rudiment radius, only for idealised_half_joint.");
 
-        prm.declare_entry("Phi min", "45.",
+        prm.declare_entry("Radius phi min", "10.",
                           Patterns::Double(0,360),
-                          "Initial polar angle (in degrees) of loading cycle, "
+                          "Initial polar angle (in degrees) of loading cycle "
+                          "corresponding to the effect of the radius, "
                           "only for idealised_half_joint.");
 
-        prm.declare_entry("Phi max", "120.",
+        prm.declare_entry("Radius phi max", "80.",
                           Patterns::Double(0,360),
-                          "Final polar angle (in degrees) of loading cycle, "
+                          "Final polar angle (in degrees) of loading cycle "
+                          "corresponding to the effect of the radius, "
                           "only for idealised_half_joint.");
 
-         prm.declare_entry("Phi width", "10.",
+         prm.declare_entry("Radius phi width", "8.",
                            Patterns::Double(0,360),
                            "Angular width in polar direction (in degrees) of "
-                           "load contact, only for idealised_half_joint.");
+                           "load contact corresponding to the effect of the "
+                           "radius, only for idealised_half_joint.");
 
-         prm.declare_entry("Theta min", "0.",
+         prm.declare_entry("Ulna phi min", "40.",
                            Patterns::Double(0,360),
-                          "Initial polar angle (in degrees) of loading cycle, "
-                          "only for idealised_half_joint.");
-
-         prm.declare_entry("Theta max", "0.",
-                           Patterns::Double(0,360),
-                           "Final polar angle (in degrees) of loading cycle, "
+                           "Initial polar angle (in degrees) of loading cycle "
+                           "corresponding to the effect of the ulna, "
                            "only for idealised_half_joint.");
 
-         prm.declare_entry("Theta width", "10.",
+         prm.declare_entry("Ulna phi max", "0.",
+                           Patterns::Double(0,360),
+                           "Final polar angle (in degrees) of loading cycle "
+                           "corresponding to the effect of the ulna, "
+                           "only for idealised_half_joint.");
+
+          prm.declare_entry("Ulna phi width", "8.",
+                            Patterns::Double(0,360),
+                            "Angular width in polar direction (in degrees) of "
+                            "load contact corresponding to the effect of the "
+                            "ulna, only for idealised_half_joint.");
+
+         prm.declare_entry("Radius theta min", "90.",
+                           Patterns::Double(0,360),
+                          "Initial polar angle (in degrees) of loading cycle "
+                          "corresponding to the effect of the radius, "
+                          "only for idealised_half_joint.");
+
+         prm.declare_entry("Radius theta max", "90.",
+                           Patterns::Double(0,360),
+                           "Final polar angle (in degrees) of loading cycle "
+                           "corresponding to the effect of the radius, "
+                           "only for idealised_half_joint.");
+
+         prm.declare_entry("Radius theta width", "10.",
                            Patterns::Double(0,360),
                            "Angular width in polar direction (in degrees) of "
-                           "load contact, only for idealised_half_joint.");
+                           "load contact corresponding to the effect of the "
+                           "ulna, only for idealised_half_joint.");
+
+          prm.declare_entry("Ulna theta min", "90.",
+                            Patterns::Double(0,360),
+                           "Initial polar angle (in degrees) of loading cycle "
+                           "corresponding to the effect of the ulna, "
+                           "only for idealised_half_joint.");
+
+          prm.declare_entry("Ulna theta max", "90.",
+                            Patterns::Double(0,360),
+                            "Final polar angle (in degrees) of loading cycle "
+                            "corresponding to the effect of the ulna, "
+                            "only for idealised_half_joint.");
+
+          prm.declare_entry("Ulna theta width", "10.",
+                            Patterns::Double(0,360),
+                            "Angular width in polar direction (in degrees) of "
+                            "load contact corresponding to the effect of the "
+                            "ulna, only for idealised_half_joint.");
 
          prm.declare_entry("Number of cycles", "1",
                            Patterns::Integer(1,1e6),
@@ -295,12 +343,18 @@ namespace CompLimb
         drained_pressure = prm.get_double("Drained pressure");
         joint_length = prm.get_double("Joint length");
         joint_radius = prm.get_double("Joint radius");
-        phi_min = prm.get_double("Phi min");
-        phi_max = prm.get_double("Phi max");
-        phi_width = prm.get_double("Phi width");
-        theta_min = prm.get_double("Theta min");
-        theta_max = prm.get_double("Theta max");
-        theta_width = prm.get_double("Theta width");
+        phi_min = prm.get_double("Radius phi min");
+        phi_max = prm.get_double("Radius phi max");
+        phi_width = prm.get_double("Radius phi width");
+        phi_min = prm.get_double("Ulna phi min");
+        phi_max = prm.get_double("Ulna phi max");
+        phi_width = prm.get_double("Ulna phi width");
+        theta_min = prm.get_double("Radius theta min");
+        theta_max = prm.get_double("Radius theta max");
+        theta_width = prm.get_double("Radius theta width");
+        theta_min = prm.get_double("Ulna theta min");
+        theta_max = prm.get_double("Ulna theta max");
+        theta_width = prm.get_double("Ulna theta width");
         num_cycles = prm.get_integer("Number of cycles");
       }
       prm.leave_subsection();
@@ -6599,22 +6653,42 @@ namespace CompLimb
       {
         if ( (boundary_id == 1) || (boundary_id == 2) )
         {
-           //Min and max polar angles of center of loading position
-           const double phi_load_min = (this->parameters.phi_min)
+           // RADIUS
+           //Min and max polar angles of center of loading position (radius)
+           const double radius_phi_load_min = (this->parameters.radius_phi_min)
                                         *(numbers::PI)/180.;
-           const double phi_load_max = (this->parameters.phi_max)
+           const double radius_load_max = (this->parameters.radius_phi_max)
                                         *(numbers::PI)/180.;
-           //Angular width in polar direction of loading
-           const double d_phi_load  = (this->parameters.phi_width)
+           //Angular width in polar direction of loading (radius)
+           const double radius_d_phi_load  = (this->parameters.radius_phi_width)
                                         *(numbers::PI)/180.;
 
-           //Min and max azimuthal angles of center of loading position
-           const double theta_load_min = (this->parameters.theta_min)
+           //Min and max azimuthal angles of center of loading position (radius)
+           const double radius_theta_load_min = (this->parameters.radius_theta_min)
                                           *(numbers::PI)/180.;
-           const double theta_load_max = (this->parameters.theta_max)
+           const double radius_theta_load_max = (this->parameters.radius_theta_max)
                                           *(numbers::PI)/180.;
-           //Angular width in azimuthal direction of loading
-           const double d_theta_load  = (this->parameters.theta_width)
+           //Angular width in azimuthal direction of loading (radius)
+           const double radius_d_theta_load  = (this->parameters.radius_theta_width)
+                                          *(numbers::PI)/180.;
+
+           // ULNA
+           //Min and max polar angles of center of loading position (ulna)
+           const double ulna_phi_load_min = (this->parameters.ulna_phi_min)
+                                        *(numbers::PI)/180.;
+           const double ulna_load_max = (this->parameters.ulna_phi_max)
+                                        *(numbers::PI)/180.;
+           //Angular width in polar direction of loading (ulna)
+           const double ulna_d_phi_load  = (this->parameters.ulna_phi_width)
+                                       *(numbers::PI)/180.;
+
+           //Min and max azimuthal angles of center of loading position (radius)
+           const double ulna_theta_load_min = (this->parameters.ulna_theta_min)
+                                          *(numbers::PI)/180.;
+           const double ulna_theta_load_max = (this->parameters.ulna_theta_max)
+                                          *(numbers::PI)/180.;
+           //Angular width in azimuthal direction of loading (radius)
+           const double ulna_d_theta_load  = (this->parameters.ulna_theta_width)
                                           *(numbers::PI)/180.;
 
            const unsigned int num_cycles = this->parameters.num_cycles;
@@ -6623,19 +6697,36 @@ namespace CompLimb
 
            if (current_time <= final_time)
            {
-             const double current_phi_load = phi_load_min
-             + (phi_load_max - phi_load_min)*(1.0 - std::sin((numbers::PI)
-                    *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
-             const double current_theta_load = theta_load_min
-             + (theta_load_max - theta_load_min)*(1.0 - std::sin((numbers::PI)
-                    *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
+             const double current_radius_phi_load = radius_phi_load_min
+             + (radius_phi_load_max - radius_phi_load_min)
+                *(1.0 - std::sin((numbers::PI)
+                *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
+             const double current_radius_theta_load = radius_theta_load_min
+             + (radius_theta_load_max - radius_theta_load_min)
+                *(1.0 - std::sin((numbers::PI)
+                *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
+             const double current_ulna_phi_load = ulna_phi_load_min
+             + (ulna_phi_load_max - ulna_phi_load_min)
+                *(1.0 - std::sin((numbers::PI)
+                *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
+             const double current_ulna_theta_load = ulna_theta_load_min
+             + (ulna_theta_load_max - ulna_theta_load_min)
+                *(1.0 - std::sin((numbers::PI)
+                *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
 
-             const JointLoadingPattern<dim> loading_pattern(current_phi_load,
-                                                            d_phi_load,
-                                                            current_theta_load,
-                                                            d_theta_load);
+             const JointLoadingPattern<dim>
+             radius_loading_pattern( current_radius_phi_load,
+                                     radius_d_phi_load,
+                                     current_radius_theta_load,
+                                     radius_d_theta_load         );
+             const JointLoadingPattern<dim>
+             ulna_loading_pattern( current_ulna_phi_load,
+                                   ulna_d_phi_load,
+                                   current_ulna_theta_load,
+                                   ulna_d_theta_load        );
 
-             load_vector = loading_pattern.value({pt[0],pt[1],pt[2]})
+             load_vector = ( radius_loading_pattern.value({pt[0],pt[1],pt[2]})
+                            + ulna_loading_pattern.value({pt[0],pt[1],pt[2]}) )
                            * (this->parameters.load) * N;
            }
         }
