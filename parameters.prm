@@ -43,31 +43,31 @@ subsection Geometry
 
   # Increase of pressure at drained boundary [Pa] w.r.t. atmospheric pressure
   set Drained pressure    = 0
-  
+
   # ===== idealised_half_joint only =====
-  
+
   # Joint rudiment dimensions [mm] (this will be multiplied by grid scale above)
-  set Joint length = 1.75 
+  set Joint length = 1.75
   set Joint radius = 0.5
 
   # Polar angle range and angle width of contact area, all angles given in degrees
   # 0 deg coincides with positive z-axis direction and corresponds to top of spherical cap
-  set Radius phi min   = 10 
+  set Radius phi min   = 10
   set Radius phi max   = 10
   set Radius phi width = 8
-  set Ulna phi min     = 40 
+  set Ulna phi min     = 40
   set Ulna phi max     = 40
   set Ulna phi width   = 8
-  
+
   # Azimuthal angle range and angle width of contact area, all angles given in degrees
   # 0 deg coincides with positive x-axis direction
-  set Radius theta min   = 90 
+  set Radius theta min   = 90
   set Radius theta max   = 90
-  set Radius theta width = 8
-  set Ulna theta min     = 90 
-  set Ulna theta max     = 90
+  set Radius theta width = 10
+  set Ulna theta min     = 270
+  set Ulna theta max     = 270
   set Ulna theta width   = 8
-  
+
   # Number of loading cycles.  Each cycle follows min-max-min angles in sinusoidal form.
   set Number of cycles = 1
 end
@@ -147,15 +147,15 @@ subsection Material properties
 
   # Growth rate
   set growth rate pressure = 1.5e-3
-  
+
   # Nature of the dependency of growth on pressure (linear, quadratic, etc.)
   set growth exponential pressure = 1.0
-  
+
   # ===== Joint growth only =====
-  
-  # Biological parameters  
+
+  # Biological parameters
   set growth rate bio = 5.0e-3
-  
+
   # ------------------------ FLUID ----------------------------------
 
   # Choose between Markert formulation of deformation-dependent intrinsic permeability (Markert)
@@ -237,10 +237,10 @@ end
 subsection Output parameters
   # Paraview output files to generate: none | bcs | solution | all
   set Output files               = all
-  
+
   # Output data every given time step number for Paraview output files ("bcs" and "solution")
   set Time step number output    = 1
-  
+
   # For "solution" file output data associated with integration point values averaged on:  elements | nodes
-  set Averaged results           = nodes  
+  set Averaged results           = nodes
 end

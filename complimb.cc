@@ -175,7 +175,7 @@ namespace CompLimb
       double       radius_theta_max;
       double       radius_theta_width;
       double       ulna_theta_min;
-      double       ulna_stheta_max;
+      double       ulna_theta_max;
       double       ulna_theta_width;
       unsigned int num_cycles;
 
@@ -343,18 +343,18 @@ namespace CompLimb
         drained_pressure = prm.get_double("Drained pressure");
         joint_length = prm.get_double("Joint length");
         joint_radius = prm.get_double("Joint radius");
-        phi_min = prm.get_double("Radius phi min");
-        phi_max = prm.get_double("Radius phi max");
-        phi_width = prm.get_double("Radius phi width");
-        phi_min = prm.get_double("Ulna phi min");
-        phi_max = prm.get_double("Ulna phi max");
-        phi_width = prm.get_double("Ulna phi width");
-        theta_min = prm.get_double("Radius theta min");
-        theta_max = prm.get_double("Radius theta max");
-        theta_width = prm.get_double("Radius theta width");
-        theta_min = prm.get_double("Ulna theta min");
-        theta_max = prm.get_double("Ulna theta max");
-        theta_width = prm.get_double("Ulna theta width");
+        radius_phi_min = prm.get_double("Radius phi min");
+        radius_phi_max = prm.get_double("Radius phi max");
+        radius_phi_width = prm.get_double("Radius phi width");
+        ulna_phi_min = prm.get_double("Ulna phi min");
+        ulna_phi_max = prm.get_double("Ulna phi max");
+        ulna_phi_width = prm.get_double("Ulna phi width");
+        radius_theta_min = prm.get_double("Radius theta min");
+        radius_theta_max = prm.get_double("Radius theta max");
+        radius_theta_width = prm.get_double("Radius theta width");
+        ulna_theta_min = prm.get_double("Ulna theta min");
+        ulna_theta_max = prm.get_double("Ulna theta max");
+        ulna_theta_width = prm.get_double("Ulna theta width");
         num_cycles = prm.get_integer("Number of cycles");
       }
       prm.leave_subsection();
@@ -6657,7 +6657,7 @@ namespace CompLimb
            //Min and max polar angles of center of loading position (radius)
            const double radius_phi_load_min = (this->parameters.radius_phi_min)
                                         *(numbers::PI)/180.;
-           const double radius_load_max = (this->parameters.radius_phi_max)
+           const double radius_phi_load_max = (this->parameters.radius_phi_max)
                                         *(numbers::PI)/180.;
            //Angular width in polar direction of loading (radius)
            const double radius_d_phi_load  = (this->parameters.radius_phi_width)
@@ -6676,7 +6676,7 @@ namespace CompLimb
            //Min and max polar angles of center of loading position (ulna)
            const double ulna_phi_load_min = (this->parameters.ulna_phi_min)
                                         *(numbers::PI)/180.;
-           const double ulna_load_max = (this->parameters.ulna_phi_max)
+           const double ulna_phi_load_max = (this->parameters.ulna_phi_max)
                                         *(numbers::PI)/180.;
            //Angular width in polar direction of loading (ulna)
            const double ulna_d_phi_load  = (this->parameters.ulna_phi_width)
