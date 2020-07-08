@@ -14,9 +14,9 @@
  * ---------------------------------------------------------------------
  */
 
-/*  Nonlinear poro-viscoelasticity 
+/*  CompLimb-biomech
  *  Author: Ester Comellas
- *         Northeastern University and 
+ *          Northeastern University and
  *          Universitat Politècnica de Catalunya, 2019
  *  
  *  This program is free software: you can redistribute it and/or modify
@@ -178,7 +178,6 @@ namespace CompLimb
       double       scale;
       std::string  load_type;
       double       load;
-      unsigned int num_cycle_sets;
       double       fluid_flow;
       double       drained_pressure;
       double       joint_length;
@@ -340,7 +339,6 @@ namespace CompLimb
         scale = prm.get_double("Grid scale");
         load_type = prm.get("Load type");
         load = prm.get_double("Load value");
-        num_cycle_sets = prm.get_integer("Number of cycle sets");
         fluid_flow = prm.get_double("Fluid flow value");
         drained_pressure = prm.get_double("Drained pressure");
         joint_length = prm.get_double("Joint length");
@@ -399,7 +397,7 @@ namespace CompLimb
     double weight_FR;
     bool gravity_term;
     int gravity_direction;
-    int gravity_value;
+    double gravity_value;
     double density_FR;
     double density_SR;
     enum SymmetricTensorEigenvectorMethod eigen_solver;
@@ -599,7 +597,7 @@ namespace CompLimb
       growth_type =  prm.get("growth");
       if ( growth_type == "morphogen" )
       {
-        growth_rate =  prm.get_double("growth_incr");
+        growth_rate =  prm.get_double("growth incr");
         growth_exponential = 0.0;
         growth_rate_bio = 0.0;
       }
@@ -641,13 +639,13 @@ namespace CompLimb
                                          (viscosity_FR == 0.0))           )
           AssertThrow(false, ExcMessage("Markert seepage velocity formulation "
           "requires the definition of 'initial intrinsic permeability' "
-          "and 'fluid viscosity' greater than 0.0.");
+          "and 'fluid viscosity' greater than 0.0."));
 
       if ( (fluid_type == "Ehlers") && ((init_darcy_coef == 0.0) ||
                                         (weight_FR == 0.0))        )
           AssertThrow(false, ExcMessage("Ehler seepage velocity formulation "
           "requires the definition of 'initial Darcy coefficient' and "
-          "'fluid weight' greater than 0.0.");
+          "'fluid weight' greater than 0.0."));
 
       const std::string eigen_solver_type = prm.get("eigen solver");
       if (eigen_solver_type == "QL Implicit Shifts")
@@ -1066,7 +1064,7 @@ class Material_Hyperelastic
                               std::pow(p_fluid, (1.0/growth_exponential));
         }
         else
-            AssertThrow(false, ExcMessage("Growth type not implemented yet.");
+            AssertThrow(false, ExcMessage("Growth type not implemented yet."));
 
         return growth_criterion;
 
@@ -1167,7 +1165,7 @@ class NeoHooke : public Material_Hyperelastic <dim,NumberType>
     Material_Hyperelastic <dim,NumberType> (parameters,time),
     mu(parameters.mu)
     {}
-    ~NeoHooke()
+    virtual ~NeoHooke()
     {}
 
      double get_viscous_dissipation() const
@@ -1225,7 +1223,7 @@ class Ogden : public Material_Hyperelastic < dim, NumberType >
            parameters.alpha2_infty,
            parameters.alpha3_infty})
     {}
-    ~Ogden()
+    virtual ~Ogden()
     {}
 
      double get_viscous_dissipation() const
@@ -1301,7 +1299,7 @@ class visco_Ogden : public Material_Hyperelastic <dim,NumberType>
         Cinv_v_1(Physics::Elasticity::StandardTensors<dim>::I),
         Cinv_v_1_converged(Physics::Elasticity::StandardTensors<dim>::I)
         {}
-        ~visco_Ogden()
+        virtual ~visco_Ogden()
         {}
 
     void update_internal_equilibrium( const Tensor<2,dim,NumberType> &F,
@@ -1402,7 +1400,7 @@ class visco_Ogden : public Material_Hyperelastic <dim,NumberType>
             if (iteration>15)
               AssertThrow(false, ExcMessage("No convergence in local Newton iteration "
                                         "for the viscoelastic exponential time "
-                                        "integration algorithm.");
+                                        "integration algorithm."));
         }
 
         //Compute converged stretches and left Cauchy-Green deformation tensor of mode 1
@@ -1618,7 +1616,7 @@ class Material_Darcy_Fluid
 
          else
              AssertThrow(false, ExcMessage("Material_Darcy_Fluid --> Only Markert "
-                            "and Ehlers formulations have been implemented.");
+                            "and Ehlers formulations have been implemented."));
 
          return (-1.0 * permeability_term * det_F
                   * (grad_p_fluid - get_body_force_FR_current()) );
@@ -1647,7 +1645,7 @@ class Material_Darcy_Fluid
          }
          else
              AssertThrow(false, ExcMessage("Material_Darcy_Fluid --> Only Markert "
-                               "and Ehlers formulations have been implemented.");
+                               "and Ehlers formulations have been implemented."));
 
          dissipation_term = ( invert(permeability_term) * seepage_velocity )
                             * seepage_velocity;
@@ -1666,7 +1664,7 @@ class Material_Darcy_Fluid
      const bool   gravity_term;
      const double density_FR;
      const int    gravity_direction;
-     const int    gravity_value;
+     const double gravity_value;
 
      Tensor<2, dim, NumberType>
       get_instrinsic_permeability_current(const Tensor<2,dim, NumberType> &F) const
@@ -1877,7 +1875,7 @@ class Solid
 
         // Define boundary conditions
         virtual void make_constraints(const int &it_nr);
-        virtual void make_dirichlet_constraints(ConstraintMatrix &constraints) = 0;
+        virtual void make_dirichlet_constraints(AffineConstraints<double> &constraints) = 0;
         virtual Tensor<1,dim> get_neumann_traction
              (const types::boundary_id &boundary_id,
               const Point<dim>         &pt,
@@ -2016,8 +2014,8 @@ class Solid
         //Integer to store num GPs per face (this value will be used often)
         const unsigned int  n_q_points_f;
 
-        //Declare an instance of dealii ConstraintMatrix class (linear constraints on DoFs due to hanging nodes or BCs)
-        ConstraintMatrix constraints;
+        //Declare an instance of dealii AffineConstraints class (linear constraints on DoFs due to hanging nodes or BCs)
+        AffineConstraints<double> constraints;
 
         //Declare an instance of dealii classes necessary for FE system set-up and assembly
         //Store elements of tangent matrix (indicated by SparsityPattern class) as sparse matrix (more efficient)
@@ -4405,29 +4403,6 @@ void Solid<dim>::output_results_to_plot(
          }
       }
 // Write the results to the plotting file.
-// Add two blank lines between cycles in the cyclic loading examples so GNUPLOT can detect each cycle as a different block
-      if (( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
-            (parameters.geom_type == "Budday_cube_tension_compression")||
-            (parameters.geom_type == "Budday_cube_shear_fully_fixed")                ) &&
-          ( (abs(current_time - parameters.end_time/3.)   <0.9*parameters.delta_t)||
-            (abs(current_time - 2.*parameters.end_time/3.)<0.9*parameters.delta_t)   ) &&
-            parameters.num_cycle_sets == 1 )
-      {
-          plotpointfile << std::endl<< std::endl;
-      }
-      if (( (parameters.geom_type == "Budday_cube_tension_compression_fully_fixed")||
-            (parameters.geom_type == "Budday_cube_tension_compression")||
-            (parameters.geom_type == "Budday_cube_shear_fully_fixed")             ) &&
-          ( (abs(current_time - parameters.end_time/9.)   <0.9*parameters.delta_t)||
-            (abs(current_time - 2.*parameters.end_time/9.)<0.9*parameters.delta_t)||
-            (abs(current_time - 3.*parameters.end_time/9.)<0.9*parameters.delta_t)||
-            (abs(current_time - 5.*parameters.end_time/9.)<0.9*parameters.delta_t)||
-            (abs(current_time - 7.*parameters.end_time/9.)<0.9*parameters.delta_t) ) &&
-            parameters.num_cycle_sets == 2 )
-      {
-          plotpointfile << std::endl<< std::endl;
-      }
-
       plotpointfile <<  std::setprecision(6) << std::scientific;
       plotpointfile << std::setw(16) << current_time        << ","
                     << std::setw(15) << total_vol_reference << ","
@@ -4476,8 +4451,10 @@ template <int dim>
 void Solid<dim>::print_console_file_header(std::ofstream &outputfile) const
 {
   outputfile << "/*-----------------------------------------------------------------------------------------";
-  outputfile << "\n\n  Poro-viscoelastic formulation to solve nonlinear solid mechanics problems using deal.ii";
-  outputfile << "\n\n  Problem setup by E Comellas and J-P Pelteret, University of Erlangen-Nuremberg, 2018";
+  outputfile << "\n\n  CompLimb-biomech formulation to model the influence of local mechanical stimuli";
+  outputfile << "\n  on joint shape using deal.ii";
+  outputfile << "\n\n  Problem setup by E Comellas, ";
+  outputfile << "\n  Northeastern University and Universitat Politècnica de Catalunya, 2020";
   outputfile << "\n\n/*-----------------------------------------------------------------------------------------";
   outputfile << "\n\nCONSOLE OUTPUT: \n\n";
 }
@@ -4692,7 +4669,7 @@ private:
   }
 
   virtual void
-  make_dirichlet_constraints(ConstraintMatrix &constraints)
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
   {
       if (this->time.get_timestep() < 2)
       {
@@ -4877,7 +4854,7 @@ private:
   }
 
   virtual void
-  make_dirichlet_constraints(ConstraintMatrix &constraints)
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
   {
       if (this->time.get_timestep() < 2)
       {
@@ -5102,7 +5079,7 @@ public:
 
 private:
   virtual void
-  make_dirichlet_constraints(ConstraintMatrix &constraints)
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
   {
       if (this->time.get_timestep()<2) //Dirichlet BC on pressure nodes
       {
@@ -5153,7 +5130,7 @@ public:
 
 private:
   virtual void
-  make_dirichlet_constraints(ConstraintMatrix &constraints)
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
   {
 
       VectorTools::interpolate_boundary_values
@@ -5186,7 +5163,7 @@ public:
 
 private:
   virtual void
-  make_dirichlet_constraints(ConstraintMatrix &constraints)
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
   {
       if (this->time.get_timestep()<2) //Dirichlet BC on pressure nodes
       {
@@ -5252,7 +5229,7 @@ public:
 
 private:
   virtual void
-  make_dirichlet_constraints(ConstraintMatrix &constraints)
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
   {
       // Fully-fix a node at the center of the cube
       Point<dim> fix_node(0.5*this->parameters.scale,
@@ -5453,7 +5430,7 @@ private:
   }
 
   virtual void
-  make_dirichlet_constraints(ConstraintMatrix &constraints)
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
   {
       VectorTools::interpolate_boundary_values
                         (this->dof_handler_ref,

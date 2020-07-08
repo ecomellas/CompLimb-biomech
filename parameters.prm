@@ -16,13 +16,9 @@ end
 
 
 subsection Geometry
-  # Type of geometry:  Ehlers_tube_step_load | Ehlers_tube_increase_load | Ehlers_cube_consolidation
-  #                  | Franceschini_consolidation
-  #                  | Budday_cube_tension_compression | Budday_cube_tension_compression_fully_fixed
-  #                  | Budday_cube_shear_fully_fixed
-  #                  | growing_muffin | trapped_turtle
-  #                  | brain_growth_confined_drained | brain_growth_confined_undrained
-  #                  | brain_growth_unconfined_drained | brain_growth_unconfined_undrained
+  # Type of geometry:  growing_muffin | trapped_turtle
+  #                  | cube_growth_confined_drained | cube_growth_confined_undrained
+  #                  | cube_growth_unconfined_drained | cube_growth_unconfined_undrained
   #                  | idealised_half_joint
   set Geometry type       = idealised_half_joint
 
@@ -70,6 +66,7 @@ subsection Geometry
 
   # Number of loading cycles.  Each cycle follows min-max-min angles in sinusoidal form.
   set Number of cycles = 1
+
 end
 
 
