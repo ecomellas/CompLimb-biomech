@@ -207,14 +207,14 @@ namespace CompLimb
     {
       prm.enter_subsection("Geometry");
       {
-        prm.declare_entry("Geometry type", "idealised_half_joint",
+        prm.declare_entry("Geometry type", "idealised_humerus",
                            Patterns::Selection("growing_muffin"
                                                "|trapped_turtle"
                                                "|cube_confined_drained"
                                                "|cube_confined_undrained"
                                                "|cube_unconfined_drained"
                                                "|cube_unconfined_undrained"
-                                               "|idealised_half_joint"),
+                                               "|idealised_humerus"),
                               "Type of geometry used. ");
 
         prm.declare_entry("Global refinement", "1",
@@ -244,88 +244,88 @@ namespace CompLimb
 
         prm.declare_entry("Joint length", "1.75",
                            Patterns::Double(0,1e6),
-                           "Joint rudiment length, only for idealised_half_joint.");
+                           "Joint rudiment length, only for idealised_humerus.");
 
         prm.declare_entry("Joint radius", "0.5",
                            Patterns::Double(0,1e6),
-                           "Joint rudiment radius, only for idealised_half_joint.");
+                           "Joint rudiment radius, only for idealised_humerus.");
 
         prm.declare_entry("Radius phi min", "10.",
                           Patterns::Double(0,360),
                           "Initial polar angle (in degrees) of loading cycle "
                           "corresponding to the effect of the radius, "
-                          "only for idealised_half_joint.");
+                          "only for idealised_humerus.");
 
         prm.declare_entry("Radius phi max", "80.",
                           Patterns::Double(0,360),
                           "Final polar angle (in degrees) of loading cycle "
                           "corresponding to the effect of the radius, "
-                          "only for idealised_half_joint.");
+                          "only for idealised_humerus.");
 
          prm.declare_entry("Radius phi width", "8.",
                            Patterns::Double(0,360),
                            "Angular width in polar direction (in degrees) of "
                            "load contact corresponding to the effect of the "
-                           "radius, only for idealised_half_joint.");
+                           "radius, only for idealised_humerus.");
 
          prm.declare_entry("Ulna phi min", "40.",
                            Patterns::Double(0,360),
                            "Initial polar angle (in degrees) of loading cycle "
                            "corresponding to the effect of the ulna, "
-                           "only for idealised_half_joint.");
+                           "only for idealised_humerus.");
 
          prm.declare_entry("Ulna phi max", "0.",
                            Patterns::Double(0,360),
                            "Final polar angle (in degrees) of loading cycle "
                            "corresponding to the effect of the ulna, "
-                           "only for idealised_half_joint.");
+                           "only for idealised_humerus.");
 
           prm.declare_entry("Ulna phi width", "8.",
                             Patterns::Double(0,360),
                             "Angular width in polar direction (in degrees) of "
                             "load contact corresponding to the effect of the "
-                            "ulna, only for idealised_half_joint.");
+                            "ulna, only for idealised_humerus.");
 
          prm.declare_entry("Radius theta min", "90.",
                            Patterns::Double(0,360),
                           "Initial polar angle (in degrees) of loading cycle "
                           "corresponding to the effect of the radius, "
-                          "only for idealised_half_joint.");
+                          "only for idealised_humerus.");
 
          prm.declare_entry("Radius theta max", "90.",
                            Patterns::Double(0,360),
                            "Final polar angle (in degrees) of loading cycle "
                            "corresponding to the effect of the radius, "
-                           "only for idealised_half_joint.");
+                           "only for idealised_humerus.");
 
          prm.declare_entry("Radius theta width", "10.",
                            Patterns::Double(0,360),
                            "Angular width in polar direction (in degrees) of "
                            "load contact corresponding to the effect of the "
-                           "ulna, only for idealised_half_joint.");
+                           "ulna, only for idealised_humerus.");
 
           prm.declare_entry("Ulna theta min", "90.",
                             Patterns::Double(0,360),
                            "Initial polar angle (in degrees) of loading cycle "
                            "corresponding to the effect of the ulna, "
-                           "only for idealised_half_joint.");
+                           "only for idealised_humerus.");
 
           prm.declare_entry("Ulna theta max", "90.",
                             Patterns::Double(0,360),
                             "Final polar angle (in degrees) of loading cycle "
                             "corresponding to the effect of the ulna, "
-                            "only for idealised_half_joint.");
+                            "only for idealised_humerus.");
 
           prm.declare_entry("Ulna theta width", "10.",
                             Patterns::Double(0,360),
                             "Angular width in polar direction (in degrees) of "
                             "load contact corresponding to the effect of the "
-                            "ulna, only for idealised_half_joint.");
+                            "ulna, only for idealised_humerus.");
 
          prm.declare_entry("Number of cycles", "1",
                            Patterns::Integer(1,1e6),
                            "Number of loading cycles. Each cycle follows min-max-min "
-                           "angles in sinusoidal form, only for idealised_half_joint.");
+                           "angles in sinusoidal form, only for idealised_humerus.");
       }
       prm.leave_subsection();
     }
@@ -385,8 +385,8 @@ namespace CompLimb
     double alpha3_mode_1;
     double viscosity_mode_1;
     std::string growth_type;
-    double growth_rate;
-    double growth_exponential;
+    double growth_rate_mech;
+    double growth_exponential_mech;
     double growth_rate_bio;
     std::string  fluid_type;
     double solid_vol_frac;
@@ -498,15 +498,15 @@ namespace CompLimb
                         Patterns::Double(0,1e6),
                         "Morphogenetic growth increment per timestep");
 
-      prm.declare_entry("growth rate pressure", "0.01",
+      prm.declare_entry("growth rate mech", "0.01",
                         Patterns::Double(0,1e6),
-                        "Growth rate for pressure-driven growth");
+                        "Growth rate for mechanically-stimulated growth");
 
-      prm.declare_entry("growth exponential pressure", "1.0",
+      prm.declare_entry("growth exponential mech", "1.0",
                         Patterns::Double(1e-6,1e+6),
                         "Growth exponential that determines nature of the "
-                        "dependency of growth on pressure (linear, quadratic,"
-                        " etc.) for pressure-driven growth");
+                        "dependency of growth on mechanical stimulus (linear, quadratic,"
+                        " etc.) for mechanically-stimulated growth");
 
     prm.declare_entry("growth rate bio", "1e3",
                       Patterns::Double(0,1e6),
@@ -597,27 +597,27 @@ namespace CompLimb
       growth_type =  prm.get("growth");
       if ( growth_type == "morphogen" )
       {
-        growth_rate =  prm.get_double("growth incr");
-        growth_exponential = 0.0;
+        growth_rate_mech =  prm.get_double("growth incr");
+        growth_exponential_mech = 0.0;
         growth_rate_bio = 0.0;
       }
       else if ( growth_type == "pressure" )
       {
-        growth_rate =  prm.get_double("growth rate pressure");
-        growth_exponential =  prm.get_double("growth exponential pressure");
+        growth_rate_mech =  prm.get_double("growth rate mech");
+        growth_exponential_mech =  prm.get_double("growth exponential mech");
         growth_rate_bio = 0.0;
       }
 
       else if ( growth_type == "joint" )
       {
-        growth_rate =  prm.get_double("growth rate pressure");
-        growth_exponential =  prm.get_double("growth exponential pressure");
+        growth_rate_mech =  prm.get_double("growth rate mech");
+        growth_exponential_mech =  prm.get_double("growth exponential mech");
         growth_rate_bio =  prm.get_double("growth rate bio");
       }
       else
       {
-        growth_rate = 0.0;
-        growth_exponential = 0.0;
+        growth_rate_mech = 0.0;
+        growth_exponential_mech = 0.0;
         growth_rate_bio = 0.0;
       }
       //Fluid
@@ -918,8 +918,8 @@ class Material_Hyperelastic
           n_OS (parameters.solid_vol_frac),
           lambda (parameters.lambda),
           growth_type(parameters.growth_type),
-          growth_rate(parameters.growth_rate),
-          growth_exponential(parameters.growth_exponential),
+          growth_rate_mech(parameters.growth_rate_mech),
+          growth_exponential_mech(parameters.growth_exponential_mech),
           growth_rate_bio(parameters.growth_rate_bio),
           joint_length(parameters.joint_length),
           joint_radius(parameters.joint_radius),
@@ -1008,8 +1008,8 @@ class Material_Hyperelastic
     const double n_OS; //Initial porosity (solid volume fraction)
     const double lambda; //1st Lamé parameter (for extension function related to compactation point)
     const std::string growth_type;
-    const double growth_rate; //Growth rate. For morphogen growth, increment per timestep
-    const double growth_exponential;
+    const double growth_rate_mech; //Growth rate. For morphogen growth, increment per timestep
+    const double growth_exponential_mech;
     const double growth_rate_bio;
     const double joint_length;
     const double joint_radius;
@@ -1036,15 +1036,15 @@ class Material_Hyperelastic
 
         //Morphogenetic growth: growth rate = growth increment and is const in every time step
         else if (growth_type == "morphogen")
-            growth_criterion=growth_rate;
+            growth_criterion=growth_rate_mech;
 
         //Growth driven by pressure
         else if (growth_type == "pressure")
         {
             double tolerance = 1.0e-6;
             if (p_fluid > tolerance) //Growth only for compressive pressures
-              growth_criterion = growth_rate*
-                              std::pow(p_fluid,growth_exponential);
+              growth_criterion = growth_rate_mech*
+                              std::pow(p_fluid,growth_exponential_mech);
             else
               growth_criterion=0.0;
         }
@@ -1060,8 +1060,8 @@ class Material_Hyperelastic
             //Pressure-driven part
             double tolerance = 1.0e-6;
             if (p_fluid > tolerance) //Growth only for compressive pressures
-              growth_criterion += growth_rate*
-                              std::pow(p_fluid, (1.0/growth_exponential));
+              growth_criterion += growth_rate_mech*
+                              std::pow(p_fluid, (1.0/growth_exponential_mech));
         }
         else
             AssertThrow(false, ExcMessage("Growth type not implemented yet."));
@@ -3416,22 +3416,35 @@ template <int dim> void Solid<dim>::output_results_to_vtu
     ExcDimensionMismatch(vertex_handler_ref.n_dofs(),
                          triangulation.n_vertices()));
 
-  Vector<double>  counter_on_vertices(vertex_handler_ref.n_dofs());
+  Vector<double> counter_on_vertices_mpi(vertex_handler_ref.n_dofs());
+  Vector<double> sum_counter_on_vertices(vertex_handler_ref.n_dofs());
 
-  std::vector<Vector<double>>
-    cauchy_stresses_total_vertex(num_comp_symm_tensor,
-                                 Vector<double>(vertex_handler_ref.n_dofs()));
-  std::vector<Vector<double>>
-    cauchy_stresses_E_vertex(num_comp_symm_tensor,
+  std::vector<Vector<double>>cauchy_stresses_total_vertex_mpi
+                            (num_comp_symm_tensor,
                              Vector<double>(vertex_handler_ref.n_dofs()));
-  std::vector<Vector<double>>
-    stretches_vertex(dim,
-                     Vector<double>(vertex_handler_ref.n_dofs()));
-
-  Vector<double> porous_dissipation_vertex(vertex_handler_ref.n_dofs());
-  Vector<double> viscous_dissipation_vertex(vertex_handler_ref.n_dofs());
-  Vector<double> solid_vol_fraction_vertex(vertex_handler_ref.n_dofs());
-  Vector<double> growth_stretch_vertex(vertex_handler_ref.n_dofs());
+  std::vector<Vector<double>>sum_cauchy_stresses_total_vertex
+                            (num_comp_symm_tensor,
+                             Vector<double>(vertex_handler_ref.n_dofs()));
+  std::vector<Vector<double>>cauchy_stresses_E_vertex_mpi
+                            (num_comp_symm_tensor,
+                             Vector<double>(vertex_handler_ref.n_dofs()));
+  std::vector<Vector<double>>sum_cauchy_stresses_E_vertex
+                            (num_comp_symm_tensor,
+                             Vector<double>(vertex_handler_ref.n_dofs()));
+  std::vector<Vector<double>>stretches_vertex_mpi
+                            (dim,
+                             Vector<double>(vertex_handler_ref.n_dofs()));
+  std::vector<Vector<double>>sum_stretches_vertex
+                            (dim,
+                             Vector<double>(vertex_handler_ref.n_dofs()));
+  Vector<double> porous_dissipation_vertex_mpi(vertex_handler_ref.n_dofs());
+  Vector<double> sum_porous_dissipation_vertex(vertex_handler_ref.n_dofs());
+  Vector<double> viscous_dissipation_vertex_mpi(vertex_handler_ref.n_dofs());
+  Vector<double> sum_viscous_dissipation_vertex(vertex_handler_ref.n_dofs());
+  Vector<double> solid_vol_fraction_vertex_mpi(vertex_handler_ref.n_dofs());
+  Vector<double> sum_solid_vol_fraction_vertex(vertex_handler_ref.n_dofs());
+  Vector<double> growth_stretch_vertex_mpi(vertex_handler_ref.n_dofs());
+  Vector<double> sum_growth_stretch_vertex(vertex_handler_ref.n_dofs());
 
   // We need to create a new FE space with a dim dof per node to
   // be able to ouput data on nodes in vector form
@@ -3441,8 +3454,11 @@ template <int dim> void Solid<dim>::output_results_to_vtu
   AssertThrow(vertex_vec_handler_ref.n_dofs() == (dim*triangulation.n_vertices()),
     ExcDimensionMismatch(vertex_vec_handler_ref.n_dofs(),
                          (dim*triangulation.n_vertices())));
-  Vector<double> seepage_velocity_vertex_vec(vertex_vec_handler_ref.n_dofs());
-  Vector<double> counter_on_vertices_vec(vertex_vec_handler_ref.n_dofs());
+  
+  Vector<double> seepage_velocity_vertex_vec_mpi(vertex_vec_handler_ref.n_dofs());
+  Vector<double> sum_seepage_velocity_vertex_vec(vertex_vec_handler_ref.n_dofs());
+  Vector<double> counter_on_vertices_vec_mpi(vertex_vec_handler_ref.n_dofs());
+  Vector<double> sum_counter_on_vertices_vec(vertex_vec_handler_ref.n_dofs());
   // -----------------------------------------------------------------------
 
   //Declare and initialize local unit vectors (to construct tensor basis)
@@ -3479,7 +3495,9 @@ template <int dim> void Solid<dim>::output_results_to_vtu
   //start cell loop
   for (; cell!=endc; ++cell, ++cell_v, ++cell_v_vec)
   {
-      if (cell->subdomain_id() != this_mpi_process) continue;
+      Assert(cell->is_locally_owned(), ExcInternalError());
+      Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
+      
       material_id(cell->active_cell_index())=
          static_cast<int>(cell->material_id());
 
@@ -3496,7 +3514,7 @@ template <int dim> void Solid<dim>::output_results_to_vtu
       std::vector<Tensor<1,dim>> solution_grads_p_fluid_AD (n_q_points);
       fe_values_ref[p_fluid_fe].get_function_gradients(solution_total,
                                                        solution_grads_p_fluid_AD);
-
+      
       //start gauss point loop
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
@@ -3570,7 +3588,7 @@ template <int dim> void Solid<dim>::output_results_to_vtu
               }
               growth_stretch_elements(cell->active_cell_index())
                 += growth_stretch/n_q_points;
-
+              
               porous_dissipation_elements(cell->active_cell_index())
                 +=  porous_dissipation/n_q_points;
               viscous_dissipation_elements(cell->active_cell_index())
@@ -3600,44 +3618,44 @@ template <int dim> void Solid<dim>::output_results_to_vtu
             {
                 types::global_dof_index local_vertex_indices =
                                               cell_v->vertex_dof_index(v, 0);
-                counter_on_vertices(local_vertex_indices) += 1;
+                counter_on_vertices_mpi(local_vertex_indices) += 1;
                 for (unsigned int k=0; k<dim; ++k)
                 {
-                    cauchy_stresses_total_vertex[k](local_vertex_indices)
+                    cauchy_stresses_total_vertex_mpi[k](local_vertex_indices)
                       += (sigma*basis_vectors[k])*basis_vectors[k];
-                    cauchy_stresses_E_vertex[k](local_vertex_indices)
+                    cauchy_stresses_E_vertex_mpi[k](local_vertex_indices)
                       += (sigma_E*basis_vectors[k])*basis_vectors[k];
-                    stretches_vertex[k](local_vertex_indices)
+                    stretches_vertex_mpi[k](local_vertex_indices)
                       += std::sqrt(1.0+2.0*Tensor<0,dim,double>(E_strain[k][k]));
 
                     types::global_dof_index local_vertex_vec_indices =
                                           cell_v_vec->vertex_dof_index(v, k);
-                    counter_on_vertices_vec(local_vertex_vec_indices) += 1;
-                    seepage_velocity_vertex_vec(local_vertex_vec_indices)
+                    counter_on_vertices_vec_mpi(local_vertex_vec_indices) += 1;
+                    seepage_velocity_vertex_vec_mpi(local_vertex_vec_indices)
                       += Tensor<0,dim,double>(seepage_vel_AD[k]);
                 }
-                growth_stretch_vertex(local_vertex_indices)
+                growth_stretch_vertex_mpi(local_vertex_indices)
                   += growth_stretch;
-
-                porous_dissipation_vertex(local_vertex_indices)
+                
+                porous_dissipation_vertex_mpi(local_vertex_indices)
                   += porous_dissipation;
-                viscous_dissipation_vertex(local_vertex_indices)
+                viscous_dissipation_vertex_mpi(local_vertex_indices)
                   += viscous_dissipation;
-                solid_vol_fraction_vertex(local_vertex_indices)
+                solid_vol_fraction_vertex_mpi(local_vertex_indices)
                   += solid_vol_fraction;
 
-                cauchy_stresses_total_vertex[3](local_vertex_indices)
+                cauchy_stresses_total_vertex_mpi[3](local_vertex_indices)
                   += (sigma*basis_vectors[0])*basis_vectors[1]; //sig_xy
-                cauchy_stresses_total_vertex[4](local_vertex_indices)
+                cauchy_stresses_total_vertex_mpi[4](local_vertex_indices)
                   += (sigma*basis_vectors[0])*basis_vectors[2];//sig_xz
-                cauchy_stresses_total_vertex[5](local_vertex_indices)
+                cauchy_stresses_total_vertex_mpi[5](local_vertex_indices)
                   += (sigma*basis_vectors[1])*basis_vectors[2]; //sig_yz
 
-                cauchy_stresses_E_vertex[3](local_vertex_indices)
+                cauchy_stresses_E_vertex_mpi[3](local_vertex_indices)
                   += (sigma_E*basis_vectors[0])*basis_vectors[1]; //sig_xy
-                cauchy_stresses_E_vertex[4](local_vertex_indices)
+                cauchy_stresses_E_vertex_mpi[4](local_vertex_indices)
                   += (sigma_E*basis_vectors[0])*basis_vectors[2];//sig_xz
-                cauchy_stresses_E_vertex[5](local_vertex_indices)
+                cauchy_stresses_E_vertex_mpi[5](local_vertex_indices)
                   += (sigma_E*basis_vectors[1])*basis_vectors[2]; //sig_yz
               }
         }
@@ -3650,26 +3668,78 @@ template <int dim> void Solid<dim>::output_results_to_vtu
   // This is why we need a counter and divide at the end, outside the cell loop.
   if (parameters.outtype == "nodes")
   {
-    for (unsigned int j=0; j<(vertex_handler_ref.n_dofs()); ++j)
-    {
-      if (counter_on_vertices(j)>0)
-      {
-        for (unsigned int i=0; i<num_comp_symm_tensor; ++i)
+      for (unsigned int d=0; d<(vertex_handler_ref.n_dofs()); ++d)
         {
-            cauchy_stresses_total_vertex[i](j) /= counter_on_vertices(j);
-            cauchy_stresses_E_vertex[i](j) /= counter_on_vertices(j);
+          sum_counter_on_vertices[d] =
+            Utilities::MPI::sum(counter_on_vertices_mpi[d],
+                                mpi_communicator);
+          sum_porous_dissipation_vertex[d] =
+            Utilities::MPI::sum(porous_dissipation_vertex_mpi[d],
+                                mpi_communicator);
+          sum_viscous_dissipation_vertex[d] =
+            Utilities::MPI::sum(viscous_dissipation_vertex_mpi[d],
+                                mpi_communicator);
+          sum_solid_vol_fraction_vertex[d] =
+            Utilities::MPI::sum(solid_vol_fraction_vertex_mpi[d],
+                                mpi_communicator);
+          sum_growth_stretch_vertex[d] =
+            Utilities::MPI::sum(growth_stretch_vertex_mpi[d],
+                                mpi_communicator);
+        
+          for (unsigned int k=0; k<num_comp_symm_tensor; ++k)
+          {
+            sum_cauchy_stresses_total_vertex[k][d] =
+                Utilities::MPI::sum(cauchy_stresses_total_vertex_mpi[k][d],
+                                    mpi_communicator);
+            sum_cauchy_stresses_E_vertex[k][d] =
+                Utilities::MPI::sum(cauchy_stresses_E_vertex_mpi[k][d],
+                                    mpi_communicator);
+          }
+          for (unsigned int k=0; k<dim; ++k)
+          {
+            sum_stretches_vertex[k][d] =
+                Utilities::MPI::sum(stretches_vertex_mpi[k][d],
+                                    mpi_communicator);
+          }
         }
-        for (unsigned int i=0; i<dim; ++i)
+      
+        for (unsigned int d=0; d<(vertex_vec_handler_ref.n_dofs()); ++d)
         {
-            stretches_vertex[i](j) /= counter_on_vertices(j);
+            sum_counter_on_vertices_vec[d] =
+                Utilities::MPI::sum(counter_on_vertices_vec_mpi[d],
+                                    mpi_communicator);
+            sum_seepage_velocity_vertex_vec[d] =
+                Utilities::MPI::sum(seepage_velocity_vertex_vec_mpi[d],
+                                    mpi_communicator);
         }
-        seepage_velocity_vertex_vec(j) /= counter_on_vertices_vec(j);
-        growth_stretch_vertex(j) /= counter_on_vertices(j);
-        porous_dissipation_vertex(j) /= counter_on_vertices(j);
-        viscous_dissipation_vertex(j) /= counter_on_vertices(j);
-        solid_vol_fraction_vertex(j) /= counter_on_vertices(j);
-      }
-    }
+
+        for (unsigned int d=0; d<(vertex_handler_ref.n_dofs()); ++d)
+        {
+          if (sum_counter_on_vertices[d]>0)
+          {
+            for (unsigned int i=0; i<num_comp_symm_tensor; ++i)
+            {
+                sum_cauchy_stresses_total_vertex[i][d] /= sum_counter_on_vertices[d];
+                sum_cauchy_stresses_E_vertex[i][d] /= sum_counter_on_vertices[d];
+            }
+            for (unsigned int i=0; i<dim; ++i)
+            {
+                sum_stretches_vertex[i][d] /= sum_counter_on_vertices[d];
+            }
+            sum_porous_dissipation_vertex[d] /= sum_counter_on_vertices[d];
+            sum_viscous_dissipation_vertex[d] /= sum_counter_on_vertices[d];
+            sum_solid_vol_fraction_vertex[d] /= sum_counter_on_vertices[d];
+            sum_growth_stretch_vertex[d] /= sum_counter_on_vertices[d];
+          }
+        }
+
+        for (unsigned int d=0; d<(vertex_vec_handler_ref.n_dofs()); ++d)
+        {
+          if (sum_counter_on_vertices_vec[d]>0)
+          {
+            sum_seepage_velocity_vertex_vec[d] /= sum_counter_on_vertices_vec[d];
+          }
+        }
   }
 
   // Add the results to the solution to create the output file for Paraview
@@ -3720,9 +3790,9 @@ template <int dim> void Solid<dim>::output_results_to_vtu
     data_out.add_data_vector(stretches_elements[1], "stretch_yy");
     data_out.add_data_vector(stretches_elements[2], "stretch_zz");
 
-    data_out.add_data_vector(seepage_velocity_elements[0], "seepage_vel_x");
-    data_out.add_data_vector(seepage_velocity_elements[1], "seepage_vel_y");
-    data_out.add_data_vector(seepage_velocity_elements[2], "seepage_vel_z");
+    data_out.add_data_vector(seepage_velocity_elements[0], "seepage_velocity_x");
+    data_out.add_data_vector(seepage_velocity_elements[1], "seepage_velocity_y");
+    data_out.add_data_vector(seepage_velocity_elements[2], "seepage_velocity_z");
 
     data_out.add_data_vector(growth_stretch_elements, "growth_stretch");
     data_out.add_data_vector(porous_dissipation_elements, "porous_dissipation");
@@ -3731,38 +3801,53 @@ template <int dim> void Solid<dim>::output_results_to_vtu
   }
   else if  (parameters.outtype == "nodes")
   {
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_total_vertex[0],"cauchy_xx");
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_total_vertex[1],"cauchy_yy");
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_total_vertex[2],"cauchy_zz");
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_total_vertex[3],"cauchy_xy");
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_total_vertex[4],"cauchy_xz");
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_total_vertex[5],"cauchy_yz");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_total_vertex[0],
+                               "cauchy_xx");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_total_vertex[1],
+                               "cauchy_yy");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_total_vertex[2],
+                               "cauchy_zz");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_total_vertex[3],
+                               "cauchy_xy");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_total_vertex[4],
+                               "cauchy_xz");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_total_vertex[5],
+                               "cauchy_yz");
 
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_E_vertex[0],"cauchy_E_xx");
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_E_vertex[1],"cauchy_E_yy");
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_E_vertex[2],"cauchy_E_zz");
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_E_vertex[3],"cauchy_E_xy");
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_E_vertex[4],"cauchy_E_xz");
-    data_out.add_data_vector(vertex_handler_ref,
-                             cauchy_stresses_E_vertex[5],"cauchy_E_yz");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_E_vertex[0],
+                               "cauchy_E_xx");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_E_vertex[1],
+                               "cauchy_E_yy");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_E_vertex[2],
+                               "cauchy_E_zz");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_E_vertex[3],
+                               "cauchy_E_xy");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_E_vertex[4],
+                               "cauchy_E_xz");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_cauchy_stresses_E_vertex[5],
+                               "cauchy_E_yz");
 
-    data_out.add_data_vector(vertex_handler_ref,
-                             stretches_vertex[0], "stretch_xx");
-    data_out.add_data_vector(vertex_handler_ref,
-                             stretches_vertex[1], "stretch_yy");
-    data_out.add_data_vector(vertex_handler_ref,
-                             stretches_vertex[2], "stretch_zz");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_stretches_vertex[0],
+                               "stretch_xx");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_stretches_vertex[1],
+                               "stretch_yy");
+      data_out.add_data_vector(vertex_handler_ref,
+                               sum_stretches_vertex[2],
+                               "stretch_zz");
 
     std::vector<DataComponentInterpretation::DataComponentInterpretation>
      comp_type_vec(dim,
@@ -3770,18 +3855,22 @@ template <int dim> void Solid<dim>::output_results_to_vtu
     std::vector<std::string> solution_name_vec(dim,"seepage_velocity");
 
     data_out.add_data_vector(vertex_vec_handler_ref,
-                             seepage_velocity_vertex_vec,
+                             sum_seepage_velocity_vertex_vec,
                              solution_name_vec,
                              comp_type_vec);
-
+      
     data_out.add_data_vector(vertex_handler_ref,
-                             growth_stretch_vertex,"growth_stretch");
+                             sum_growth_stretch_vertex,
+                             "growth_stretch");
     data_out.add_data_vector(vertex_handler_ref,
-                             porous_dissipation_vertex, "porous_dissipation");
+                             sum_porous_dissipation_vertex,
+                             "porous_dissipation");
     data_out.add_data_vector(vertex_handler_ref,
-                             viscous_dissipation_vertex, "viscous_dissipation");
+                             sum_viscous_dissipation_vertex,
+                             "viscous_dissipation");
     data_out.add_data_vector(vertex_handler_ref,
-                             solid_vol_fraction_vertex, "solid_vol_fraction");
+                             sum_solid_vol_fraction_vertex,
+                             "solid_vol_fraction");
   }
 //---------------------------------------------------------------------
 
@@ -3881,8 +3970,10 @@ template <int dim> void Solid<dim>::output_bcs_to_vtu
   AssertThrow(vertex_vec_handler_ref.n_dofs()==(dim*triangulation.n_vertices()),
     ExcDimensionMismatch(vertex_vec_handler_ref.n_dofs(),
                          (dim*triangulation.n_vertices())));
-  Vector<double> loads_vertex_vec(vertex_vec_handler_ref.n_dofs());
-  Vector<double> counter_on_vertices_vec(vertex_vec_handler_ref.n_dofs());
+  Vector<double> loads_vertex_vec_mpi(vertex_vec_handler_ref.n_dofs());
+  Vector<double> sum_loads_vertex_vec(vertex_vec_handler_ref.n_dofs());
+  Vector<double> counter_on_vertices_vec_mpi(vertex_vec_handler_ref.n_dofs());
+  Vector<double> sum_counter_on_vertices_vec(vertex_vec_handler_ref.n_dofs());
   // -----------------------------------------------------------------------
 
   //Declare an instance of the material class object
@@ -3906,7 +3997,9 @@ template <int dim> void Solid<dim>::output_bcs_to_vtu
   //start cell loop
   for (; cell!=endc; ++cell, ++cell_v_vec)
   {
-      if (cell->subdomain_id() != this_mpi_process) continue;
+      Assert(cell->is_locally_owned(), ExcInternalError());
+      Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
+      
       material_id(cell->active_cell_index())=static_cast<int>(cell->material_id());
 
       const UpdateFlags uf_face(update_quadrature_points | update_normal_vectors |
@@ -3950,8 +4043,8 @@ template <int dim> void Solid<dim>::output_bcs_to_vtu
                       {
                         types::global_dof_index local_vertex_vec_indices
                             = cell_v_vec->face(face)->vertex_dof_index(v, k);
-                        counter_on_vertices_vec(local_vertex_vec_indices) += 1;
-                        loads_vertex_vec(local_vertex_vec_indices) += traction[k];
+                        counter_on_vertices_vec_mpi(local_vertex_vec_indices) += 1;
+                        loads_vertex_vec_mpi(local_vertex_vec_indices) += traction[k];
                       }
                    }
                 }
@@ -3963,9 +4056,23 @@ template <int dim> void Solid<dim>::output_bcs_to_vtu
 
   if (parameters.outtype == "nodes")
   {
-      for (unsigned int j=0; j<(vertex_vec_handler_ref.n_dofs()); ++j)
-          if (counter_on_vertices_vec(j)>0)
-            loads_vertex_vec(j) /= counter_on_vertices_vec(j);
+      for (unsigned int d=0; d<(vertex_vec_handler_ref.n_dofs()); ++d)
+      {
+          sum_counter_on_vertices_vec[d] =
+            Utilities::MPI::sum(counter_on_vertices_vec_mpi[d],
+                                mpi_communicator);
+          sum_loads_vertex_vec[d] =
+            Utilities::MPI::sum(loads_vertex_vec_mpi[d],
+                                mpi_communicator);
+      }
+      
+      for (unsigned int d=0; d<(vertex_vec_handler_ref.n_dofs()); ++d)
+      {
+        if (sum_counter_on_vertices_vec[d]>0)
+        {
+          sum_loads_vertex_vec[d] /= sum_counter_on_vertices_vec[d];
+        }
+      }
   }
 
   FilteredDataOutFaces<dim> data_out_face(this_mpi_process);
@@ -3999,7 +4106,7 @@ template <int dim> void Solid<dim>::output_bcs_to_vtu
     std::vector<std::string> ouput_name_face_vec(dim, "load");
 
     data_out_face.add_data_vector(vertex_vec_handler_ref,
-                                  loads_vertex_vec,
+                                  sum_loads_vertex_vec,
                                   ouput_name_face_vec,
                                   face_comp_type_vec);
   }
@@ -4966,15 +5073,15 @@ private:
 
 //@sect4{Brain cube}
 template <int dim>
-  class GrowthBrainBaseCube
+  class GrowthBaseCube
       : public Solid<dim>
 {
 public:
-    GrowthBrainBaseCube (const Parameters::AllParameters &parameters)
+    GrowthBaseCube (const Parameters::AllParameters &parameters)
     : Solid<dim> (parameters)
   {}
 
-  virtual ~GrowthBrainBaseCube () {}
+  virtual ~GrowthBaseCube () {}
 
 private:
   virtual void
@@ -5067,15 +5174,15 @@ private:
 
 
 template <int dim>
-  class GrowthBrainConfinedDrained
-      : public GrowthBrainBaseCube<dim>
+  class GrowthCubeConfinedDrained
+      : public GrowthBaseCube<dim>
 {
 public:
-    GrowthBrainConfinedDrained (const Parameters::AllParameters &parameters)
-    : GrowthBrainBaseCube<dim> (parameters)
+    GrowthCubeConfinedDrained (const Parameters::AllParameters &parameters)
+    : GrowthBaseCube<dim> (parameters)
   {}
 
-  virtual ~GrowthBrainConfinedDrained () {}
+  virtual ~GrowthCubeConfinedDrained () {}
 
 private:
   virtual void
@@ -5118,15 +5225,15 @@ private:
 };
 
 template <int dim>
-  class GrowthBrainConfinedUndrained
-      : public GrowthBrainBaseCube<dim>
+  class GrowthCubeConfinedUndrained
+      : public GrowthBaseCube<dim>
 {
 public:
-    GrowthBrainConfinedUndrained (const Parameters::AllParameters &parameters)
-    : GrowthBrainBaseCube<dim> (parameters)
+    GrowthCubeConfinedUndrained (const Parameters::AllParameters &parameters)
+    : GrowthBaseCube<dim> (parameters)
   {}
 
-  virtual ~GrowthBrainConfinedUndrained () {}
+  virtual ~GrowthCubeConfinedUndrained () {}
 
 private:
   virtual void
@@ -5151,15 +5258,15 @@ private:
 
 
 template <int dim>
-  class GrowthBrainUnconfinedDrained
-      : public GrowthBrainBaseCube<dim>
+  class GrowthCubeUnconfinedDrained
+      : public GrowthBaseCube<dim>
 {
 public:
-    GrowthBrainUnconfinedDrained (const Parameters::AllParameters &parameters)
-    : GrowthBrainBaseCube<dim> (parameters)
+    GrowthCubeUnconfinedDrained (const Parameters::AllParameters &parameters)
+    : GrowthBaseCube<dim> (parameters)
   {}
 
-  virtual ~GrowthBrainUnconfinedDrained () {}
+  virtual ~GrowthCubeUnconfinedDrained () {}
 
 private:
   virtual void
@@ -5217,15 +5324,15 @@ private:
 };
 
 template <int dim>
-  class GrowthBrainUnconfinedUndrained
-      : public GrowthBrainBaseCube<dim>
+  class GrowthCubeUnconfinedUndrained
+      : public GrowthBaseCube<dim>
 {
 public:
-    GrowthBrainUnconfinedUndrained (const Parameters::AllParameters &parameters)
-    : GrowthBrainBaseCube<dim> (parameters)
+    GrowthCubeUnconfinedUndrained (const Parameters::AllParameters &parameters)
+    : GrowthBaseCube<dim> (parameters)
   {}
 
-  virtual ~GrowthBrainUnconfinedUndrained () {}
+  virtual ~GrowthCubeUnconfinedUndrained () {}
 
 private:
   virtual void
@@ -5303,15 +5410,15 @@ double JointLoadingPattern<dim>::svalue(const std::array<double,dim> &sp,
 
 //@sect4{Simplified example for biomechanical tissue-level model}
 template <int dim>
-  class IdealisedHalfJoint
+  class IdealisedHumerus
       : public Solid<dim>
 {
 public:
-    IdealisedHalfJoint (const Parameters::AllParameters &parameters)
+    IdealisedHumerus (const Parameters::AllParameters &parameters)
     : Solid<dim> (parameters)
   {}
 
-  virtual ~IdealisedHalfJoint () {}
+  virtual ~IdealisedHumerus () {}
 
 private:
   virtual void
@@ -5671,27 +5778,27 @@ try
     }
     else if (parameters.geom_type == "cube_growth_confined_drained")
     {
-      GrowthBrainConfinedDrained<3> solid_3d(parameters);
+      GrowthCubeConfinedDrained<3> solid_3d(parameters);
       solid_3d.run();
     }
     else if (parameters.geom_type == "cube_growth_confined_undrained")
     {
-      GrowthBrainConfinedUndrained<3> solid_3d(parameters);
+      GrowthCubeConfinedUndrained<3> solid_3d(parameters);
       solid_3d.run();
     }
     else if (parameters.geom_type == "cube_growth_unconfined_drained")
     {
-      GrowthBrainUnconfinedDrained<3> solid_3d(parameters);
+      GrowthCubeUnconfinedDrained<3> solid_3d(parameters);
       solid_3d.run();
     }
     else if (parameters.geom_type == "cube_growth_unconfined_undrained")
     {
-      GrowthBrainUnconfinedUndrained<3> solid_3d(parameters);
+      GrowthCubeUnconfinedUndrained<3> solid_3d(parameters);
       solid_3d.run();
     }
-    else if (parameters.geom_type == "idealised_half_joint")
+    else if (parameters.geom_type == "idealised_humerus")
     {
-      IdealisedHalfJoint<3> solid_3d(parameters);
+      IdealisedHumerus<3> solid_3d(parameters);
       solid_3d.run();
     }
     else

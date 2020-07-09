@@ -19,8 +19,8 @@ subsection Geometry
   # Type of geometry:  growing_muffin | trapped_turtle
   #                  | cube_growth_confined_drained | cube_growth_confined_undrained
   #                  | cube_growth_unconfined_drained | cube_growth_unconfined_undrained
-  #                  | idealised_half_joint
-  set Geometry type       = idealised_half_joint
+  #                  | idealised_humerus
+  set Geometry type       = idealised_humerus
 
   # Global refinement level (higher value means finer mesh)
   set Global refinement   = 2
@@ -143,10 +143,10 @@ subsection Material properties
   # ===== Pressure-driven or joint growth only =====
 
   # Growth rate
-  set growth rate pressure = 1.5e-3
+  set growth rate mech = 1.5e-3
 
-  # Nature of the dependency of growth on pressure (linear, quadratic, etc.)
-  set growth exponential pressure = 1.0
+  # Nature of the dependency of growth on the mechanical stimuli (linear, quadratic, etc.)
+  set growth exponential mech = 1.0
 
   # ===== Joint growth only =====
 
