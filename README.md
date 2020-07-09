@@ -26,3 +26,5 @@ Branches
 ### master
 This is the latest stable version of the code.
 
+### mech-growth-function
+A branch to explore alternatives for the mechanical growth function. Initially, mechanical growth was made proportional to pore pressure, but here we look at different measures of seepage velocity (norm, divergence, etc.) to replace have this velocity as mechanical stimulus, instead of the pressure.
