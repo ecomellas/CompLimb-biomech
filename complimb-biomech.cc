@@ -195,6 +195,7 @@ namespace CompLimb
       double       ulna_theta_max;
       double       ulna_theta_width;
       unsigned int num_cycles;
+      unsigned int num_no_load_time_steps;
 
       static void
       declare_parameters(ParameterHandler &prm);
@@ -326,6 +327,11 @@ namespace CompLimb
                            Patterns::Integer(1,1e6),
                            "Number of loading cycles. Each cycle follows min-max-min "
                            "angles in sinusoidal form, only for idealised_humerus.");
+
+         prm.declare_entry("Number of no-load time steps", "0",
+                            Patterns::Integer(0,1e6),
+                            "Number of time steps at the end of the simulation "
+                            "without load.");
       }
       prm.leave_subsection();
     }
@@ -356,6 +362,7 @@ namespace CompLimb
         ulna_theta_max = prm.get_double("Ulna theta max");
         ulna_theta_width = prm.get_double("Ulna theta width");
         num_cycles = prm.get_integer("Number of cycles");
+        num_no_load_time_steps = prm.get_integer("Number of no-load time steps");
       }
       prm.leave_subsection();
     }
@@ -5741,7 +5748,9 @@ private:
 
          const unsigned int num_cycles = this->parameters.num_cycles;
          const double current_time = this->time.get_current();
-         const double final_time   = 0.9*(this->time.get_end());
+         const double end_load_time = (this->time.get_timestep())*
+                                (this->parameters.num_no_load_time_steps);
+         const double final_time = (this->time.get_end()) - end_load_time;
 
          if (current_time <= final_time)
          {
