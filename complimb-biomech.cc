@@ -5748,28 +5748,28 @@ private:
 
          const unsigned int num_cycles = this->parameters.num_cycles;
          const double current_time = this->time.get_current();
-         const double end_load_time = (this->time.get_timestep())*
+         const double end_load_time = (this->time.get_delta_t())*
                                 (this->parameters.num_no_load_time_steps);
-         const double final_time = (this->time.get_end()) - end_load_time;
+         const double final_load_time = (this->time.get_end()) - end_load_time;
 
-         if (current_time <= final_time)
+         if (current_time <= final_load_time)
          {
            const double current_radius_phi_load = radius_phi_load_min
            + (radius_phi_load_max - radius_phi_load_min)
               *(1.0 - std::sin((numbers::PI)
-              *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
+              *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
            const double current_radius_theta_load = radius_theta_load_min
            + (radius_theta_load_max - radius_theta_load_min)
               *(1.0 - std::sin((numbers::PI)
-              *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
+              *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
            const double current_ulna_phi_load = ulna_phi_load_min
            + (ulna_phi_load_max - ulna_phi_load_min)
               *(1.0 - std::sin((numbers::PI)
-              *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
+              *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
            const double current_ulna_theta_load = ulna_theta_load_min
            + (ulna_theta_load_max - ulna_theta_load_min)
               *(1.0 - std::sin((numbers::PI)
-              *(2.0*num_cycles*current_time/final_time + 0.5)))/2.0;
+              *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
 
            const JointLoadingPattern<dim>
            radius_loading_pattern( current_radius_phi_load,
