@@ -64,7 +64,6 @@
 #include <deal.II/grid/grid_out.h>
 #include <deal.II/grid/manifold_lib.h>
 #include <deal.II/grid/tria_accessor.h>
-#include <deal.II/grid/tria_boundary_lib.h>
 #include <deal.II/grid/tria_iterator.h>
 
 #include <deal.II/fe/fe_dgp_monomial.h>
@@ -2461,9 +2460,8 @@ void Solid<dim>::system_setup(TrilinosWrappers::MPI::BlockVector &solution_delta
     DoFRenumbering::component_wise(dof_handler_ref, block_component);
 
     // Count the number of DoFs in each block
-    dofs_per_block.clear();
-    dofs_per_block.resize(n_blocks);
-    DoFTools::count_dofs_per_block(dof_handler_ref, dofs_per_block, block_component);
+    dofs_per_block =
+    DoFTools::count_dofs_per_fe_block(dof_handler_ref, block_component);
 
     // Setup the sparsity pattern and tangent matrix
     all_locally_owned_dofs = DoFTools::locally_owned_dofs_per_subdomain(dof_handler_ref);
@@ -3275,7 +3273,7 @@ class FilteredDataOut : public DataOut<dim, DH>
       virtual typename DataOut<dim, DH>::cell_iterator
       first_cell()
       {
-        typename DataOut<dim, DH>::active_cell_iterator
+        typename DataOut<dim, DH>::cell_iterator
         cell = this->dofs->begin_active();
         while ( (cell!=this->dofs->end()) &&
                 (cell->subdomain_id()!=subdomain_id) )
@@ -3290,7 +3288,7 @@ class FilteredDataOut : public DataOut<dim, DH>
         {
             const IteratorFilters::SubdomainEqualTo predicate(subdomain_id);
             return
-              ++(FilteredIterator<typename DataOut<dim,DH>::active_cell_iterator>
+              ++(FilteredIterator<typename DataOut<dim,DH>::cell_iterator>
                  (predicate,old_cell));
         }
         else
@@ -3316,7 +3314,7 @@ class FilteredDataOutFaces : public DataOutFaces<dim,DH>
       virtual typename DataOutFaces<dim,DH>::cell_iterator
       first_cell ()
       {
-        typename DataOutFaces<dim,DH>::active_cell_iterator
+        typename DataOutFaces<dim,DH>::cell_iterator
         cell = this->dofs->begin_active();
         while ((cell!=this->dofs->end()) && (cell->subdomain_id()!=subdomain_id))
           ++cell;
@@ -3330,7 +3328,7 @@ class FilteredDataOutFaces : public DataOutFaces<dim,DH>
         {
             const IteratorFilters::SubdomainEqualTo predicate(subdomain_id);
             return
-              ++(FilteredIterator<typename DataOutFaces<dim,DH>::active_cell_iterator>
+              ++(FilteredIterator<typename DataOutFaces<dim,DH>::cell_iterator>
                  (predicate,old_cell));
         }
         else
