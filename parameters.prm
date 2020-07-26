@@ -135,8 +135,8 @@ subsection Material properties
   set viscosity_1       = 3870
 
 
-  # Type of continuum growth: none | morphogen | pressure | joint
-  set growth               = joint
+  # Type of continuum growth: none | morphogen | pressure | joint-pressure | joint-div-vel
+  set growth               = joint-div-vel
 
   # ===== Morphogenetic growth only =====
 

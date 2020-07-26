@@ -497,7 +497,7 @@ namespace CompLimb
                         "'eta_1' for first viscous mode in Ogden material [-].");
 
       prm.declare_entry("growth", "none",
-                         Patterns::Selection("none|morphogen|pressure|joint"),
+                         Patterns::Selection("none|morphogen|pressure|joint-pressure|joint-div-vel"),
                          "Type of continuum growth");
 
       prm.declare_entry("growth incr", "1.0",
@@ -614,7 +614,7 @@ namespace CompLimb
         growth_rate_bio = 0.0;
       }
 
-      else if ( growth_type == "joint" )
+      else if ( (growth_type == "joint-pressure")||(growth_type == "joint-div-vel"))
       {
         growth_rate_mech =  prm.get_double("growth rate mech");
         growth_exponential_mech =  prm.get_double("growth exponential mech");
@@ -967,7 +967,19 @@ class Material_Hyperelastic
         //Here the "whole" F is needed
         return (get_tau_E(Fve)*NumberType(1/det_F));
      }
-
+    
+    // Compute divergence of seepage velocity
+    double get_div_seepage_vel(const Tensor<2,dim,NumberType> &F,
+                               const NumberType &p_fluid_AD) const
+    {
+        const NumberType det_F = determinant(F);
+        Assert(det_F>0, ExcInternalError());
+        
+        NumberType div_seepage_vel = p_fluid_AD;
+        
+        return Tensor<0,dim,double>(div_seepage_vel);
+    }
+    
     // Retrieve stored det_Fve
     double get_converged_det_Fve() const
     {
@@ -1004,8 +1016,25 @@ class Material_Hyperelastic
         det_Fve = det_F/det_Fg;
 
         //Growth
-        const double p_fluid = Tensor<0,dim,double>(p_fluid_AD);
-        this->update_growth_stretch(p_fluid,pt);
+//        const double p_fluid = Tensor<0,dim,double>(p_fluid_AD);
+        double mech_growth_stimulus;
+        
+        //No mechanical stimulus
+        if ((growth_type == "none")||(growth_type == "morphogen"))
+            mech_growth_stimulus = 0.0;
+        
+        //Mechanical stimulus is pressure
+        else if ((growth_type == "pressure")||(growth_type == "joint-pressure"))
+            mech_growth_stimulus = Tensor<0,dim,double>(p_fluid_AD);
+            
+        //Mechanical stimulus is divergence if seepage velocity
+        else if (growth_type == "joint-div-vel")
+            mech_growth_stimulus = this->get_div_seepage_vel(F, p_fluid_AD);
+        
+        else
+            AssertThrow(false, ExcMessage("Growth type not implemented yet."));
+
+        this->update_growth_stretch(mech_growth_stimulus,pt);
     }
 
     virtual double get_viscous_dissipation( ) const = 0;
@@ -1031,7 +1060,7 @@ class Material_Hyperelastic
 
   protected:
     //Compute growth criterion
-    double get_growth_criterion(const double     &p_fluid,
+    double get_growth_criterion(const double     &mech_growth_stimulus,
                                 const Point<dim> &pt      ) const
     {
         double growth_criterion;
@@ -1048,14 +1077,14 @@ class Material_Hyperelastic
         else if (growth_type == "pressure")
         {
             double tolerance = 1.0e-6;
-            if (p_fluid > tolerance) //Growth only for compressive pressures
+            if (mech_growth_stimulus > tolerance) //Growth only for compressive pressures
               growth_criterion = growth_rate_mech*
-                              std::pow(p_fluid,growth_exponential_mech);
+                              std::pow(mech_growth_stimulus,growth_exponential_mech);
             else
               growth_criterion=0.0;
         }
-        //Growth in joint
-        else if (growth_type == "joint")
+        //Growth driven by pressure in joint
+        else if (growth_type == "joint-pressure")
         {
             //Biological part
             const double chi = (pt[dim-1] + joint_length - joint_radius)/
@@ -1063,15 +1092,31 @@ class Material_Hyperelastic
             growth_criterion = growth_rate_bio
                                 *(0.14-0.87*chi+4.40*chi*chi-2.66*chi*chi*chi);
 
-            //Pressure-driven part
+            //Mechanical part
             double tolerance = 1.0e-6;
-            if (p_fluid > tolerance) //Growth only for compressive pressures
+            if (mech_growth_stimulus > tolerance) //Growth only for compressive pressures
               growth_criterion += growth_rate_mech*
-                              std::pow(p_fluid, (1.0/growth_exponential_mech));
+                              std::pow(mech_growth_stimulus, (1.0/growth_exponential_mech));
+        }
+        // Growth driven by divergence of the seepage velocity in joint
+        // Exactly the same as above, but kept it separate, in case we need to change the function
+        else if (growth_type == "joint-div-vel")
+        {
+            //Biological part
+            const double chi = (pt[dim-1] + joint_length - joint_radius)/
+                               joint_length;
+            growth_criterion = growth_rate_bio
+                                *(0.14-0.87*chi+4.40*chi*chi-2.66*chi*chi*chi);
+
+            //Velocity-driven part
+            double tolerance = 1.0e-6;
+            if (mech_growth_stimulus > tolerance) //Growth only for positive divergences
+              growth_criterion += growth_rate_mech*
+                              std::pow(mech_growth_stimulus, (1.0/growth_exponential_mech));
         }
         else
             AssertThrow(false, ExcMessage("Growth type not implemented yet."));
-
+        
         return growth_criterion;
 
     }
@@ -1094,9 +1139,9 @@ class Material_Hyperelastic
     }
 
     //Compute growth stretch
-    void update_growth_stretch(const double &p_fluid, const Point<dim> &pt)
+    void update_growth_stretch(const double &mech_growth_stimulus, const Point<dim> &pt)
     {
-       double growth_criterion = this->get_growth_criterion(p_fluid,pt);
+       double growth_criterion = this->get_growth_criterion(mech_growth_stimulus,pt);
        growth_stretch = growth_stretch_converged;
 
         //If there is growth, compute growth stretch
