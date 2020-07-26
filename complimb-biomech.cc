@@ -3412,7 +3412,6 @@ template <int dim> void Solid<dim>::output_results_to_vtu
   Vector<double> growth_stretch_elements(triangulation.n_active_cells());
   Vector<double> div_seepage_velocity_elements(triangulation.n_active_cells());
   Vector<double> norm_seepage_velocity_elements(triangulation.n_active_cells());
-  Vector<double> normsq_seepage_velocity_elements(triangulation.n_active_cells());
 
   // OUTPUT AVERAGED ON NODES ----------------------------------------------
   // We need to create a new FE space with a single dof per node to avoid
@@ -3457,8 +3456,6 @@ template <int dim> void Solid<dim>::output_results_to_vtu
   Vector<double> sum_div_seepage_velocity_vertex(vertex_handler_ref.n_dofs());
   Vector<double> norm_seepage_velocity_vertex_mpi(vertex_handler_ref.n_dofs());
   Vector<double> sum_norm_seepage_velocity_vertex(vertex_handler_ref.n_dofs());
-  Vector<double> normsq_seepage_velocity_vertex_mpi(vertex_handler_ref.n_dofs());
-  Vector<double> sum_normsq_seepage_velocity_vertex(vertex_handler_ref.n_dofs());
 
   // We need to create a new FE space with a dim dof per node to
   // be able to ouput data on nodes in vector form
@@ -3585,7 +3582,6 @@ template <int dim> void Solid<dim>::output_results_to_vtu
           
           // Norm of seepage velocity
           const double norm_seepage_vel = Tensor<0,dim,double>(seepage_vel_AD.norm());
-          const double normsq_seepage_vel = Tensor<0,dim,double>(seepage_vel_AD.norm_square());
           
           //Dissipations
           const double porous_dissipation =
@@ -3623,8 +3619,6 @@ template <int dim> void Solid<dim>::output_results_to_vtu
                   += div_seepage_vel/n_q_points;
               norm_seepage_velocity_elements(cell->active_cell_index())
                       += norm_seepage_vel/n_q_points;
-              normsq_seepage_velocity_elements(cell->active_cell_index())
-                      += normsq_seepage_vel/n_q_points;
 
               porous_dissipation_elements(cell->active_cell_index())
                 +=  porous_dissipation/n_q_points;
@@ -3678,8 +3672,6 @@ template <int dim> void Solid<dim>::output_results_to_vtu
                   += div_seepage_vel;
                 norm_seepage_velocity_vertex_mpi(local_vertex_indices)
                   += norm_seepage_vel;
-                normsq_seepage_velocity_vertex_mpi(local_vertex_indices)
-                  += normsq_seepage_vel;
                 
                 porous_dissipation_vertex_mpi(local_vertex_indices)
                   += porous_dissipation;
@@ -3735,9 +3727,6 @@ template <int dim> void Solid<dim>::output_results_to_vtu
           sum_norm_seepage_velocity_vertex[d] =
              Utilities::MPI::sum(norm_seepage_velocity_vertex_mpi[d],
                                  mpi_communicator);
-          sum_normsq_seepage_velocity_vertex[d] =
-            Utilities::MPI::sum(normsq_seepage_velocity_vertex_mpi[d],
-                                mpi_communicator);
         
           for (unsigned int k=0; k<num_comp_symm_tensor; ++k)
           {
@@ -3785,7 +3774,6 @@ template <int dim> void Solid<dim>::output_results_to_vtu
             sum_growth_stretch_vertex[d] /= sum_counter_on_vertices[d];
             sum_div_seepage_velocity_vertex[d] /= sum_counter_on_vertices[d];
             sum_norm_seepage_velocity_vertex[d] /= sum_counter_on_vertices[d];
-            sum_normsq_seepage_velocity_vertex[d] /= sum_counter_on_vertices[d];
           }
         }
 
@@ -3852,7 +3840,6 @@ template <int dim> void Solid<dim>::output_results_to_vtu
 
     data_out.add_data_vector(div_seepage_velocity_elements, "div_seepage_velocity");
     data_out.add_data_vector(norm_seepage_velocity_elements, "norm_seepage_velocity");
-    data_out.add_data_vector(normsq_seepage_velocity_elements, "norm_sq_seepage_velocity");
     data_out.add_data_vector(growth_stretch_elements, "growth_stretch");
     data_out.add_data_vector(porous_dissipation_elements, "porous_dissipation");
     data_out.add_data_vector(viscous_dissipation_elements, "viscous_dissipation");
@@ -3924,9 +3911,6 @@ template <int dim> void Solid<dim>::output_results_to_vtu
     data_out.add_data_vector(vertex_handler_ref,
                              sum_norm_seepage_velocity_vertex,
                              "norm_seepage_velocity");
-    data_out.add_data_vector(vertex_handler_ref,
-                             sum_normsq_seepage_velocity_vertex,
-                             "norm_sq_seepage_velocity");
     data_out.add_data_vector(vertex_handler_ref,
                              sum_growth_stretch_vertex,
                              "growth_stretch");
