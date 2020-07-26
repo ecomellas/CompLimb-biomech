@@ -68,7 +68,7 @@ subsection Geometry
   set Number of cycles = 1
 
   # Number of time steps at the end of the simulation without load. 
-  set Number of no-load time steps = 9
+  set Number of no-load time steps = 1
 
 end
 
@@ -227,7 +227,7 @@ end
 
 subsection Time
   # End time [s]
-  set End time            = 1.0e-3
+  set End time            = 1.1e-3
 
   # Time step size [s]
   set Time step size      =  1.0e-4

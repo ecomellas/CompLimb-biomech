@@ -5780,16 +5780,9 @@ private:
                                  current_ulna_theta_load,
                                  ulna_d_theta_load        );
              
-            //Figuring out the physical meaning of div(grad p):
-            //Apply load in the same area (same min & max angle values)
-            //but increase/decrease magnitude gradually, instead of constant value.
-            // TEMPORAL - TO BE DELETED
-           const double load_magnitude_factor = 1.0/2.0 *
-             (1.0 - std::sin(numbers::PI * (2.0*current_time/final_load_time + 0.5)));
-             
            load_vector = ( radius_loading_pattern.value({pt[0],pt[1],pt[2]})
                           + ulna_loading_pattern.value({pt[0],pt[1],pt[2]}) )
-                         * (this->parameters.load)*load_magnitude_factor * N;
+                         * (this->parameters.load) * N;
          }
       }
     }
