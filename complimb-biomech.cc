@@ -968,18 +968,6 @@ class Material_Hyperelastic
         return (get_tau_E(Fve)*NumberType(1/det_F));
      }
     
-    // Compute divergence of seepage velocity
-    double get_div_seepage_vel(const Tensor<2,dim,NumberType> &F,
-                               const NumberType &p_fluid_AD) const
-    {
-        const NumberType det_F = determinant(F);
-        Assert(det_F>0, ExcInternalError());
-        
-        NumberType div_seepage_vel = p_fluid_AD;
-        
-        return Tensor<0,dim,double>(div_seepage_vel);
-    }
-    
     // Retrieve stored det_Fve
     double get_converged_det_Fve() const
     {
@@ -1008,6 +996,7 @@ class Material_Hyperelastic
 
     virtual void update_internal_equilibrium(const Tensor<2,dim,NumberType> &F,
                                              const NumberType &p_fluid_AD,
+                                             const NumberType &div_seepage_vel,
                                              const Point<dim> &pt              )
     {
         const double det_F = Tensor<0,dim,double>(determinant(F));
@@ -1029,7 +1018,7 @@ class Material_Hyperelastic
             
         //Mechanical stimulus is divergence if seepage velocity
         else if (growth_type == "joint-div-vel")
-            mech_growth_stimulus = this->get_div_seepage_vel(F, p_fluid_AD);
+            mech_growth_stimulus = Tensor<0,dim,double>(div_seepage_vel);
         
         else
             AssertThrow(false, ExcMessage("Growth type not implemented yet."));
@@ -1355,10 +1344,11 @@ class visco_Ogden : public Material_Hyperelastic <dim,NumberType>
 
     void update_internal_equilibrium( const Tensor<2,dim,NumberType> &F,
                                       const NumberType &p_fluid,
+                                      const NumberType &div_seepage_vel,
                                       const Point<dim> &pt                 )
     {
         Material_Hyperelastic<dim,NumberType>::
-            update_internal_equilibrium(F, p_fluid, pt);
+            update_internal_equilibrium(F, p_fluid, div_seepage_vel, pt);
 
         // Finite viscoelasticity following Reese & Govindjee (1998)
         // Algorithm for implicit exponential time integration
@@ -1673,6 +1663,41 @@ class Material_Darcy_Fluid
                   * (grad_p_fluid - get_body_force_FR_current()) );
      }
 
+    // Compute divergence of seepage velocity
+    NumberType get_div_seepage_vel(const Tensor<1,dim,NumberType> &grad_p_fluid,
+                                   const Tensor<2,dim,NumberType> &hess_p_fluid,
+                                   const Tensor<1,dim,NumberType> &grad_det_F,
+                                   const Tensor<2,dim,NumberType> &F) const
+    {
+        // Compute fluid material parameters required and do some checks
+        const NumberType det_F = determinant(F);
+        Assert(det_F>0.0, ExcInternalError());
+        
+        if (fluid_type != "Markert")
+            AssertThrow(false, ExcMessage("Growth driven by divergence of seepage velocity "
+                           "has been implemented for Markert formulation only."));
+        
+        static const SymmetricTensor<2,dim,double>
+            I(Physics::Elasticity::StandardTensors<dim>::I);
+        const Tensor<2,dim,NumberType> initial_instrinsic_permeability_tensor_T
+                     = transpose(Tensor<2,dim,double>(initial_intrinsic_permeability*I));
+        const Tensor<2,dim,NumberType> instrinsic_permeability_tensor_T
+                     = transpose(get_instrinsic_permeability_current(F));
+        const NumberType numerator = NumberType (std::pow( (det_F - n_OS), (kappa_darcy - 1.0)));
+        const NumberType denominator = NumberType (std::pow( (1 - n_OS), kappa_darcy));
+        const Tensor<1,dim,NumberType> func_grad_det_F
+                     = (kappa_darcy * numerator / denominator) * grad_det_F;
+        
+        // Double contraction following Holzapfel notation, i.e.  A:B = A_ij B_ij
+        NumberType div_seepage_vel = NumberType(
+            (grad_p_fluid - get_body_force_FR_current())
+               * (func_grad_det_F * initial_instrinsic_permeability_tensor_T))
+             + double_contract<0,0,1,1>
+                (instrinsic_permeability_tensor_T,hess_p_fluid);
+        
+        return (-1.0 / viscosity_FR * div_seepage_vel);
+    }
+    
      double get_porous_dissipation
                         (const Tensor<2,dim,NumberType> &F,
                          const Tensor<1,dim,NumberType> &grad_p_fluid) const
@@ -1832,9 +1857,10 @@ class PointHistory
 
         void update_internal_equilibrium(const Tensor<2,dim,NumberType> &F,
                                          const NumberType &p_fluid,
+                                         const NumberType &div_seepage_vel,
                                          const Point<dim> &pt               )
         {
-            solid_material->update_internal_equilibrium(F,p_fluid,pt);
+            solid_material->update_internal_equilibrium(F,p_fluid,div_seepage_vel,pt);
         }
 
         double get_viscous_dissipation() const
@@ -1849,6 +1875,14 @@ class PointHistory
              return fluid_material->get_seepage_velocity_current(F,grad_p_fluid);
          }
 
+       NumberType get_div_seepage_vel( const Tensor<1,dim,NumberType> &grad_p_fluid,
+                                       const Tensor<2,dim,NumberType> &hess_p_fluid,
+                                       const Tensor<1,dim,NumberType> &grad_det_F,
+                                       const Tensor<2,dim,NumberType> &F) const
+        {
+            return fluid_material->get_div_seepage_vel(grad_p_fluid,hess_p_fluid,grad_det_F,F);
+        }
+    
         double get_porous_dissipation
                 (const Tensor<2,dim,NumberType> &F,
                  const Tensor<1,dim,NumberType> &grad_p_fluid) const
@@ -2358,8 +2392,10 @@ struct Solid<dim>::ScratchData_ASM
     // Quadrature point solution
     std::vector<NumberType>               local_dof_values;
     std::vector<Tensor<2,dim,NumberType>> solution_grads_u_total;
+    std::vector<Tensor<3,dim,NumberType>> solution_hess_u_total;
     std::vector<NumberType>               solution_values_p_fluid_total;
     std::vector<Tensor<1,dim,NumberType>> solution_grads_p_fluid_total;
+    std::vector<Tensor<2,dim,NumberType>> solution_hess_p_fluid_total;
     std::vector<Tensor<1,dim,NumberType>> solution_grads_face_p_fluid_total;
 
     //shape function values
@@ -2380,8 +2416,10 @@ struct Solid<dim>::ScratchData_ASM
       fe_face_values_ref(fe_cell, qf_face, uf_face),
       local_dof_values(fe_cell.dofs_per_cell),
       solution_grads_u_total(qf_cell.size()),
+      solution_hess_u_total(qf_cell.size()),
       solution_values_p_fluid_total(qf_cell.size()),
       solution_grads_p_fluid_total(qf_cell.size()),
+      solution_hess_p_fluid_total(qf_cell.size()),
       solution_grads_face_p_fluid_total(qf_face.size()),
       Nx(qf_cell.size(), std::vector<Tensor<1,dim>>(fe_cell.dofs_per_cell)),
       Nx_p_fluid(qf_cell.size(), std::vector<double>(fe_cell.dofs_per_cell)),
@@ -2404,8 +2442,10 @@ struct Solid<dim>::ScratchData_ASM
                          rhs.fe_face_values_ref.get_update_flags()),
       local_dof_values(rhs.local_dof_values),
       solution_grads_u_total(rhs.solution_grads_u_total),
+      solution_hess_u_total(rhs.solution_hess_u_total),
       solution_values_p_fluid_total(rhs.solution_values_p_fluid_total),
       solution_grads_p_fluid_total(rhs.solution_grads_p_fluid_total),
+      solution_hess_p_fluid_total(rhs.solution_hess_p_fluid_total),
       solution_grads_face_p_fluid_total(rhs.solution_grads_face_p_fluid_total),
       Nx(rhs.Nx),
       Nx_p_fluid(rhs.Nx_p_fluid),
@@ -2413,7 +2453,7 @@ struct Solid<dim>::ScratchData_ASM
       symm_grad_Nx(rhs.symm_grad_Nx),
       grad_Nx_p_fluid(rhs.grad_Nx_p_fluid)
     {}
-
+    
     void reset()
     {
       const unsigned int n_q_points = Nx_p_fluid.size();
@@ -2427,9 +2467,11 @@ struct Solid<dim>::ScratchData_ASM
         }
 
       Assert(solution_grads_u_total.size() == n_q_points, ExcInternalError());
+      Assert(solution_hess_u_total.size() == n_q_points, ExcInternalError());
       Assert(solution_values_p_fluid_total.size() == n_q_points, ExcInternalError());
       Assert(solution_grads_p_fluid_total.size() == n_q_points, ExcInternalError());
-
+      Assert(solution_hess_p_fluid_total.size() == n_q_points, ExcInternalError());
+        
       Assert(Nx.size() == n_q_points, ExcInternalError());
       Assert(grad_Nx.size() == n_q_points, ExcInternalError());
       Assert(symm_grad_Nx.size() == n_q_points, ExcInternalError());
@@ -2441,8 +2483,10 @@ struct Solid<dim>::ScratchData_ASM
           Assert(symm_grad_Nx[q_point].size() == n_dofs_per_cell, ExcInternalError());
 
           solution_grads_u_total[q_point] = 0.0;
+          solution_hess_u_total[q_point] = 0.0;
           solution_values_p_fluid_total[q_point] = 0.0;
           solution_grads_p_fluid_total[q_point] = 0.0;
+          solution_hess_p_fluid_total[q_point] = 0.0;
 
           for (unsigned int k=0; k<n_dofs_per_cell; ++k)
             {
@@ -2453,7 +2497,7 @@ struct Solid<dim>::ScratchData_ASM
               grad_Nx_p_fluid[q_point][k] = 0.0;
             }
         }
-
+        
       const unsigned int n_f_q_points = solution_grads_face_p_fluid_total.size();
       Assert(solution_grads_face_p_fluid_total.size() == n_f_q_points, ExcInternalError());
 
@@ -2971,7 +3015,7 @@ void Solid<dim>::assemble_system
     //Info given to FEValues and FEFaceValues constructors, to indicate
     //which data will be needed at each element.
     const UpdateFlags uf_cell(update_values |
-                              update_gradients |
+                              update_gradients | update_hessians |
                               update_quadrature_points | update_JxW_values);
     const UpdateFlags uf_face(update_values | update_gradients |
                               update_normal_vectors |
@@ -3057,22 +3101,45 @@ void Solid<dim>::assemble_system_one_cell
             {
                 const Tensor<2, dim> Grad_Nx_u =
                                   scratch.fe_values_ref[u_fe].gradient(k, q);
+                const Tensor<3, dim> Hessian_Nx_u =
+                                  scratch.fe_values_ref[u_fe].hessian(k, q);
+
                 for (unsigned int dd=0; dd<dim; dd++)
                     for (unsigned int ee=0; ee<dim; ee++)
+                    {
+                        // Gradient of displ
                         scratch.solution_grads_u_total[q][dd][ee]
                           += scratch.local_dof_values[k] * Grad_Nx_u[dd][ee];
+                
+                        for (unsigned int ff=0; ff<dim; ff++)
+                          // Hessian of displ
+                          scratch.solution_hess_u_total[q][dd][ee][ff]
+                            += scratch.local_dof_values[k] * Hessian_Nx_u[dd][ee][ff];
+                    }
             }
             else if  (k_group == p_fluid_block)
             {
                 const double Nx_p = scratch.fe_values_ref[p_fluid_fe].value(k, q);
                 const Tensor<1, dim> Grad_Nx_p =
                             scratch.fe_values_ref[p_fluid_fe].gradient(k, q);
+                const Tensor<2, dim> Hessian_Nx_p =
+                            scratch.fe_values_ref[p_fluid_fe].hessian(k, q);
 
+                // Value of pressure
                 scratch.solution_values_p_fluid_total[q]
                           += scratch.local_dof_values[k] * Nx_p;
+                
                 for (unsigned int dd = 0; dd < dim; dd++)
+                {
+                    // Gradient of pressure
                     scratch.solution_grads_p_fluid_total[q][dd]
                       += scratch.local_dof_values[k] * Grad_Nx_p[dd];
+                    for (unsigned int ee=0; ee<dim; ee++)
+                    // Hessian of pressure
+                    scratch.solution_hess_p_fluid_total[q][dd][ee]
+                      += scratch.local_dof_values[k] * Hessian_Nx_p[dd][ee];
+                    
+                }
             }
             else
               Assert(k_group <= p_fluid_block, ExcInternalError());
@@ -3123,19 +3190,58 @@ void Solid<dim>::assemble_system_one_cell
     std::vector<ADNumberType> residual_ad (dofs_per_cell, ADNumberType(0.0));
     for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
+        // Deformation gradient tensor
         Tensor<2,dim,ADNumberType> F_AD = scratch.solution_grads_u_total[q_point];
         F_AD += Tensor<2,dim,double>(Physics::Elasticity::StandardTensors<dim>::I);
         const ADNumberType det_F_AD = determinant(F_AD);
         Assert(det_F_AD>0, ExcInternalError());
         const Tensor<2,dim,ADNumberType> F_inv_AD = invert(F_AD);
+        const Tensor<2,dim,ADNumberType> F_inv_T_AD = transpose(F_inv_AD);
 
+
+        // Define some aliases to make the assembly process easier to follow
+        const std::vector<Tensor<1,dim>> &Nu = scratch.Nx[q_point];
+        const std::vector<SymmetricTensor<2,dim,ADNumberType>> &symm_grad_Nu
+                                          = scratch.symm_grad_Nx[q_point];
+        const std::vector<double> &Np = scratch.Nx_p_fluid[q_point];
+        const std::vector<Tensor<1,dim,ADNumberType>> &grad_Np
+                                        = scratch.grad_Nx_p_fluid[q_point];
+          
+        // Pressure
         const ADNumberType p_fluid_AD =
-                              scratch.solution_values_p_fluid_total[q_point];
+                                scratch.solution_values_p_fluid_total[q_point];
+        // Gradient of pressure
+        const Tensor<1,dim,ADNumberType> grad_p_fluid_AD
+                  = scratch.solution_grads_p_fluid_total[q_point]*F_inv_AD;
+        // Hessian of pressure
+        const Tensor<2,dim,ADNumberType> hess_p_fluid_AD
+              = F_inv_T_AD*(scratch.solution_hess_p_fluid_total[q_point])*F_inv_AD;
+
+       // Hessian of displacements in ref configuration
+       const Tensor<3,dim,ADNumberType> hess_u_AD
+            = scratch.solution_hess_u_total[q_point];
+        
+        // Gradient of determinat of F
+        const Tensor<1,dim,ADNumberType> grad_det_F_AD = det_F_AD * double_contract<0,0,1,1>(transpose(F_inv_AD), hess_u_AD);
+        
+        // Quadrature weight
+        const double JxW = scratch.fe_values_ref.JxW(q_point);
+        
+        // Current quadrature point
         const Point<dim> pt = scratch.fe_values_ref.quadrature_point(q_point);
+          
+        // Update internal equilibrium
         {
           PointHistory<dim, ADNumberType> *lqph_q_point_nc
               = const_cast<PointHistory<dim,ADNumberType>*>(lqph[q_point].get());
-          lqph_q_point_nc->update_internal_equilibrium(F_AD, p_fluid_AD, pt);
+        
+          const ADNumberType div_seepage_vel_AD
+              =  lqph_q_point_nc->get_div_seepage_vel(grad_p_fluid_AD,
+                                                      hess_p_fluid_AD,
+                                                      grad_det_F_AD,
+                                                      F_AD);
+            
+          lqph_q_point_nc->update_internal_equilibrium(F_AD, p_fluid_AD, div_seepage_vel_AD, pt);
         }
 
         //Growth
@@ -3160,17 +3266,6 @@ void Solid<dim>::assemble_system_one_cell
         const Tensor<1,dim,ADNumberType> overall_body_force
                   = lqph[q_point]->get_overall_body_force(F_AD, parameters);
 
-        // Define some aliases to make the assembly process easier to follow
-        const std::vector<Tensor<1,dim>> &Nu = scratch.Nx[q_point];
-        const std::vector<SymmetricTensor<2,dim,ADNumberType>> &symm_grad_Nu
-                                            = scratch.symm_grad_Nx[q_point];
-        const std::vector<double> &Np = scratch.Nx_p_fluid[q_point];
-        const std::vector<Tensor<1,dim,ADNumberType>> &grad_Np
-                                          = scratch.grad_Nx_p_fluid[q_point];
-        const Tensor<1,dim,ADNumberType> grad_p
-                    = scratch.solution_grads_p_fluid_total[q_point]*F_inv_AD;
-        const double JxW = scratch.fe_values_ref.JxW(q_point);
-
         for (unsigned int i=0; i<dofs_per_cell; ++i)
           {
             const unsigned int i_group = fe.system_to_base_index(i).first.first;
@@ -3183,7 +3278,7 @@ void Solid<dim>::assemble_system_one_cell
             else if (i_group == p_fluid_block)
             {
                 const Tensor<1,dim,ADNumberType> seepage_vel_current
-                  = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p);
+                  = lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p_fluid_AD);
                 residual_ad[i] += Np[i]*(det_Fve_AD-det_Fve_converged)*JxW;
                 residual_ad[i] -= time.get_delta_t()*grad_Np[i]
                                    *seepage_vel_current*JxW;
@@ -3559,23 +3654,28 @@ template <int dim> void Solid<dim>::output_results_to_vtu
 
       fe_values_ref.reinit(cell);
 
+      // Computing solutions, gradients and hessians of unknowns
+      std::vector<double> solution_values_p_fluid(n_q_points);
+      fe_values_ref[p_fluid_fe].get_function_values(solution_total,
+                                                    solution_values_p_fluid);
+      
       std::vector<Tensor<2,dim>> solution_grads_u(n_q_points);
       fe_values_ref[u_fe].get_function_gradients(solution_total,
                                                  solution_grads_u);
 
-      std::vector<double> solution_values_p_fluid_total(n_q_points);
-      fe_values_ref[p_fluid_fe].get_function_values(solution_total,
-                                                    solution_values_p_fluid_total);
-
-      std::vector<Tensor<1,dim>> solution_grads_p_fluid_AD (n_q_points);
+      std::vector<Tensor<1,dim>> solution_grads_p_fluid(n_q_points);
       fe_values_ref[p_fluid_fe].get_function_gradients(solution_total,
-                                                       solution_grads_p_fluid_AD);
+                                                       solution_grads_p_fluid);
       
-      // Computing hessians for divergence of gradient of pressure
-      std::vector<Tensor<2,dim>> solution_hess_p_fluid_AD (n_q_points);
+      std::vector<Tensor<2,dim>> solution_hess_p_fluid(n_q_points);
       fe_values_ref[p_fluid_fe].get_function_hessians(solution_total,
-                                                       solution_hess_p_fluid_AD);
-      //start gauss point loop
+                                                      solution_hess_p_fluid);
+      
+      std::vector<Tensor<3,dim>> solution_hess_u(n_q_points);
+      fe_values_ref[u_fe].get_function_hessians(solution_total,
+                                                solution_hess_u);
+      
+      // Start gauss point loop
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
           const Tensor<2,dim,ADNumberType>
@@ -3587,9 +3687,9 @@ template <int dim> void Solid<dim>::output_results_to_vtu
               lqph = quadrature_point_history.get_data(cell);
           Assert(lqph.size() == n_q_points, ExcInternalError());
 
-          const double p_fluid = solution_values_p_fluid_total[q_point];
+          const double p_fluid = solution_values_p_fluid[q_point];
 
-          //Cauchy stress
+          // Cauchy stress
           static const SymmetricTensor<2,dim,double>
             I (Physics::Elasticity::StandardTensors<dim>::I);
           SymmetricTensor<2,dim> sigma_E;
@@ -3604,27 +3704,37 @@ template <int dim> void Solid<dim>::output_results_to_vtu
           sigma_fluid_vol *= -p_fluid;
           const SymmetricTensor<2,dim> sigma = sigma_E + sigma_fluid_vol;
 
-          //Volumes
+          // Volumes
           const double solid_vol_fraction = (parameters.solid_vol_frac)/det_F;
 
-          //Green-Lagrange strain
+          // Green-Lagrange strain
           const Tensor<2,dim> E_strain = 0.5*(transpose(F_AD)*F_AD - I);
 
-          //Seepage velocity
+          // Seepage velocity
           const Tensor<2,dim,ADNumberType> F_inv = invert(F_AD);
           const Tensor<1,dim,ADNumberType> grad_p_fluid_AD =
-                                    solution_grads_p_fluid_AD[q_point]*F_inv;
+                                    solution_grads_p_fluid[q_point]*F_inv;
           const Tensor<1,dim,ADNumberType> seepage_vel_AD =
            lqph[q_point]->get_seepage_velocity_current(F_AD, grad_p_fluid_AD);
 
-          // Computing hessian of pressure in current configuration
+          // Hessian of pressure in current configuration
           const Tensor<2,dim,ADNumberType> F_inv_T = transpose(F_inv);
           const Tensor<2,dim,ADNumberType> hess_p_fluid_AD =
-                                   F_inv_T*solution_hess_p_fluid_AD[q_point]*F_inv;
+                                   F_inv_T*solution_hess_p_fluid[q_point]*F_inv;
           
-          // Computing divergence of pressure as trace of hessian
-          const double div_seepage_vel = Tensor<0,dim,double>(trace(hess_p_fluid_AD));
+          // Hessian of displacements in ref configuration
+          const Tensor<3,dim,ADNumberType> hess_u_AD = solution_hess_u[q_point];
+           
+          // Gradient of determinat of F
+          const Tensor<1,dim,ADNumberType> grad_det_F_AD = det_F_AD * double_contract<0,0,1,1>(F_inv_T, hess_u_AD);
+          const ADNumberType div_seepage_vel_AD
+              =  lqph[q_point]->get_div_seepage_vel(grad_p_fluid_AD,
+                                                    hess_p_fluid_AD,
+                                                    grad_det_F_AD,
+                                                    F_AD);
           
+          const double div_seepage_vel = Tensor<0,dim,double>(div_seepage_vel_AD);
+
           // Norm of seepage velocity
           const double norm_seepage_vel = Tensor<0,dim,double>(seepage_vel_AD.norm());
           
