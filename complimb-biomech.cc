@@ -128,7 +128,7 @@ namespace CompLimb
     {
       unsigned int poly_degree_displ;
       unsigned int poly_degree_pore;
-      unsigned int quad_order;
+      unsigned int quad_points;
 
       static void
       declare_parameters(ParameterHandler &prm);
@@ -149,9 +149,10 @@ namespace CompLimb
                           Patterns::Integer(0),
                           "Pore pressure system polynomial order");
 
-        prm.declare_entry("Quadrature order", "3",
+        prm.declare_entry("Quadrature points", "3",
                           Patterns::Integer(0),
-                          "Gauss quadrature order");
+                          "Gauss quadrature points per space dimension, "
+                          "exact for polynomials of degree 2n-1");
       }
       prm.leave_subsection();
     }
@@ -162,7 +163,7 @@ namespace CompLimb
       {
         poly_degree_displ = prm.get_integer("Polynomial degree displ");
         poly_degree_pore = prm.get_integer("Polynomial degree pore");
-        quad_order = prm.get_integer("Quadrature order");
+        quad_points = prm.get_integer("Quadrature points");
       }
       prm.leave_subsection();
     }
@@ -764,6 +765,7 @@ namespace CompLimb
   {
     std::string  outfiles_requested;
     unsigned int timestep_output;
+    unsigned int poly_degree_output;
     std::string  outtype;
 
     static void
@@ -784,6 +786,10 @@ namespace CompLimb
                         Patterns::Integer(0),
                         "Output data for time steps multiple of the given "
                         "integer value.");
+      prm.declare_entry("Output element order", "0",
+                        Patterns::Integer(0),
+                        "Order of elements for output. If undefined, "
+                        "the same as the polynomial degree displ will be used.");
       prm.declare_entry("Averaged results", "nodes",
                          Patterns::Selection("elements|nodes"),
                          "Output data associated with integration point values"
@@ -798,6 +804,7 @@ namespace CompLimb
     {
       outfiles_requested = prm.get("Output files");
       timestep_output = prm.get_integer("Time step number output");
+      poly_degree_output = prm.get_integer("Output element order");
       outtype = prm.get("Averaged results");
     }
     prm.leave_subsection();
@@ -2196,8 +2203,8 @@ Solid<dim>::Solid(const Parameters::AllParameters &parameters)
     z_displacement(first_u_component+2),
     pressure(p_fluid_component),
     dofs_per_block(n_blocks),
-    qf_cell(parameters.quad_order),
-    qf_face(parameters.quad_order),
+    qf_cell(parameters.quad_points),
+    qf_face(parameters.quad_points),
     n_q_points (qf_cell.size()),
     n_q_points_f (qf_face.size())
     {
@@ -3943,6 +3950,7 @@ template <int dim> void Solid<dim>::output_results_to_vtu
 
   // Add the results to the solution to create the output file for Paraview
   FilteredDataOut<dim> data_out(this_mpi_process);
+
   std::vector<DataComponentInterpretation::DataComponentInterpretation>
     comp_type(dim,
               DataComponentInterpretation::component_is_part_of_vector);
@@ -4081,7 +4089,10 @@ template <int dim> void Solid<dim>::output_results_to_vtu
   }
 //---------------------------------------------------------------------
 
-  data_out.build_patches(degree_displ);
+  if (parameters.poly_degree_output == 0)
+      data_out.build_patches(parameters.poly_degree_displ);
+  else
+      data_out.build_patches(parameters.poly_degree_output);
 
   struct Filename
   {
@@ -4318,7 +4329,11 @@ template <int dim> void Solid<dim>::output_bcs_to_vtu
                                   face_comp_type_vec);
   }
 //---------------------------------------------------------------------
-  data_out_face.build_patches (degree_displ);
+  
+  if (parameters.poly_degree_output == 0)
+    data_out_face.build_patches (parameters.poly_degree_displ);
+  else
+    data_out_face.build_patches (parameters.poly_degree_output);
 
   struct Filename_faces
   {
