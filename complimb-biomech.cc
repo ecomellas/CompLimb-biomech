@@ -215,7 +215,8 @@ namespace CompLimb
                                                "|cube_confined_undrained"
                                                "|cube_unconfined_drained"
                                                "|cube_unconfined_undrained"
-                                               "|idealised_humerus"),
+                                               "|idealised_humerus"
+                                               "|idealised_humerus_reduced"),
                               "Type of geometry used. ");
 
         prm.declare_entry("Global refinement", "1",
@@ -3950,7 +3951,6 @@ template <int dim> void Solid<dim>::output_results_to_vtu
 
   // Add the results to the solution to create the output file for Paraview
   FilteredDataOut<dim> data_out(this_mpi_process);
-
   std::vector<DataComponentInterpretation::DataComponentInterpretation>
     comp_type(dim,
               DataComponentInterpretation::component_is_part_of_vector);
@@ -5974,6 +5974,466 @@ private:
       return std::make_pair(displ_incr,direction);
   }
 };
+
+
+//@sect4{Reduced version of simplified example for biomechanical tissue-level model}
+template <int dim>
+  class IdealisedHumerusReduced
+      : public Solid<dim>
+{
+public:
+    IdealisedHumerusReduced (const Parameters::AllParameters &parameters)
+    : Solid<dim> (parameters)
+  {}
+
+  virtual ~IdealisedHumerusReduced () {}
+
+private:
+  virtual void
+  make_grid()
+  {
+//      double radius = this->parameters.joint_radius;
+//      double cylinder_height = 0.5*((this->parameters.joint_length)
+//                                -(this->parameters.joint_radius));
+//      const Point<dim-1> center_base(0.0,0.0);
+//      Triangulation<dim-1>  tria_quarter_circle_pos_y;
+//      Triangulation<dim-1>  tria_quarter_circle_neg_y;
+//      Triangulation<dim-1>  tria_half_circle;
+//      Triangulation<dim>  tria_half_cylinder;
+//      GridGenerator::quarter_hyper_ball(tria_quarter_circle_pos_y,
+//                                        center_base,
+//                                        radius                    );
+//      GridGenerator::quarter_hyper_ball(tria_quarter_circle_neg_y,
+//                                        center_base,
+//                                        radius                    );
+//      //Rotate quarter-circle so that it is in pos_x, pos_z, neg_y orthant.
+//      const double rot_angle_circ = 3.0*(numbers::PI)/2.0;
+//      GridTools::rotate(rot_angle_circ, tria_quarter_circle_neg_y);
+//      // Rotate all vertices of the given two-dimensional triangulation
+//      // in counter-clockwise sense around the origin of the coordinate system
+//      // by the given angle (given in radians, rather than degrees).
+//
+//      GridGenerator::merge_triangulations(tria_quarter_circle_pos_y,
+//                                          tria_quarter_circle_neg_y,
+//                                          tria_half_circle          );
+//
+//      GridGenerator::extrude_triangulation(tria_half_circle,
+//                                           2,
+//                                           cylinder_height,
+//                                           tria_half_cylinder );
+//
+//      const Tensor<1,dim> shift_cylinder({0.0, 0.0, -1.0*cylinder_height});
+//      GridTools::shift(shift_cylinder, tria_half_cylinder);
+//
+//      const Point<dim> center(0.0,0.0,0.0);
+//      Triangulation<dim>  tria_quarter_sphere_pos_y;
+//      GridGenerator::quarter_hyper_ball(tria_quarter_sphere_pos_y,
+//                                        center,
+//                                        radius                    );
+//      Triangulation<dim>  tria_quarter_sphere_neg_y;
+//      GridGenerator::quarter_hyper_ball(tria_quarter_sphere_neg_y,
+//                                        center,
+//                                        radius                    );
+//
+//      //Rotate quarter-sphere so that it is in pos_x, pos_z, neg_y orthant.
+//      const double rot_angle = (numbers::PI)/2.0;
+//      GridTools::rotate(rot_angle, 0, tria_quarter_sphere_neg_y);
+//      // Rotate all vertices of the given triangulation in
+//      // counter-clockwise direction around the axis with the given index.
+//
+//     //Merge the three meshes
+//      Triangulation<dim>  tria_half_sphere;
+//      GridGenerator::merge_triangulations(tria_quarter_sphere_pos_y,
+//                                          tria_quarter_sphere_neg_y,
+//                                          tria_half_sphere          );
+//
+//      GridGenerator::merge_triangulations(tria_half_sphere,
+//                                          tria_half_cylinder,
+//                                          this->triangulation,
+//                                          0.1*radius          );
+//
+//      // Assign boundary IDs
+//      for (auto cell : this->triangulation.active_cell_iterators())
+//          for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+//          {
+//              if (cell->face(face)->at_boundary() == true  &&
+//                  std::abs(cell->face(face)->center()[2]+cylinder_height) < 1.0e-6)
+//                          cell->face(face)->set_boundary_id(0);  // Bottom face
+//
+//              else if (cell->face(face)->at_boundary() == true               &&
+//                       cell->face(face)->center()[2] < 0.0                   &&
+//                       cell->face(face)->center()[2] > -1.0*cylinder_height  &&
+//                       cell->face(face)->center()[0] > 0.1*radius               )
+//                            cell->face(face)->set_boundary_id(1); // Hull of cylinder
+//
+//              else if (cell->face(face)->at_boundary() == true  &&
+//                       cell->face(face)->center()[2] > 0.0      &&
+//                       cell->face(face)->center()[0] > 0.1*radius )
+//                            cell->face(face)->set_boundary_id(2); // Spherical surface
+//
+//              else if (cell->face(face)->at_boundary() == true  &&
+//                       cell->face(face)->center()[0] <= 0.1*radius )
+//                          cell->face(face)->set_boundary_id(3); // Symmetry plane
+//          }
+//
+//      // Set manifolds
+//      const types::manifold_id  cylinder_id = 1;
+//      const types::manifold_id  sphere_id = 2;
+//      const types::manifold_id  inner_id = 3;
+//
+//      TransfiniteInterpolationManifold<dim> inner_manifold;
+//      const CylindricalManifold<dim> cylindrical_manifold(2);
+//      const SphericalManifold<dim> spherical_manifold(center);
+//
+//      // Assign manifold IDs
+//      this->triangulation.reset_all_manifolds();
+//      this->triangulation.set_all_manifold_ids(inner_id);
+//      this->triangulation.set_all_manifold_ids_on_boundary(1,cylinder_id);
+//      this->triangulation.set_all_manifold_ids_on_boundary(2,sphere_id);
+//      // Symmetry plane must have cartesian coordinates
+//      this->triangulation.set_all_manifold_ids_on_boundary(3,numbers::flat_manifold_id);
+//
+//      for (auto cell : this->triangulation.active_cell_iterators())
+//      {
+//          for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+//          {
+//              // Axis of cylinder must have flat ID
+//              if (std::abs(cell->face(face)->center()[0])<1.0e-6 &&
+//                  std::abs(cell->face(face)->center()[1])<1.0e-6 &&
+//                  cell->center()[2]<(0.1*radius)                     )
+//                    cell->set_manifold_id(numbers::flat_manifold_id);  //double check
+//          }
+//      }
+//
+//
+//      // Set manifold
+//      this->triangulation.set_manifold (cylinder_id, cylindrical_manifold);
+//      this->triangulation.set_manifold (sphere_id, spherical_manifold);
+//      inner_manifold.initialize(this->triangulation);
+//      this->triangulation.set_manifold (inner_id, inner_manifold);
+//
+//      //Refine mesh
+//      this->triangulation.refine_global(1);
+//      inner_manifold.initialize(this->triangulation);
+//      if (this->parameters.global_refinement > 1)
+//          this->triangulation.refine_global((this->parameters.global_refinement)-1);
+//
+//      //Scale geometry
+//      GridTools::scale(this->parameters.scale, this->triangulation);
+      
+      
+      
+//      double radius = this->parameters.joint_radius;
+//      const Point<dim> mesh_center(0.0,0.0,0.0);
+//      Triangulation<dim>  tria_half_sphere;
+//      GridGenerator::half_hyper_ball(tria_half_sphere,
+//                                     mesh_center,
+//                                     radius            );
+//      //A half hyper-ball around center, which contains 6 in 3d.
+//      //The cut plane is perpendicular to the x-axis.
+//      //Boundary indicators are 0 for the curved boundary and 1 for the cut plane.
+//      //The manifold id for the curved boundary is set to zero, and
+//      //a SphericalManifold is attached to it.
+//
+//      //Rotate half-sphere so that it is perpendicular to the z-axis
+//      const double rot_angle = 3.0*(numbers::PI)/2.0;
+//      GridTools::rotate(rot_angle, 1, tria_half_sphere);
+//
+//      // Remove the cells in the negative x-axis
+//      std::set<typename Triangulation<dim>::active_cell_iterator> cells_to_remove;
+//      for (const auto cell: tria_half_sphere.active_cell_iterators())
+//          if (cell->center()[2] > (numbers::PI)/2.0     &&
+//              cell->center()[2] < 3.0*(numbers::PI)/2.0   ) //spherical coordinates: 90 < phi < 270
+//            cells_to_remove.insert(cell);
+//
+//      GridGenerator::create_triangulation_with_removed_cells(tria_half_sphere,
+//                                                             cells_to_remove,
+//                                                             this->triangulation);
+//
+//     // Assign boundary IDs
+//     for (const auto cell : this->triangulation.active_cell_iterators())
+//        for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+//        {
+//           if (cell->face(face)->at_boundary() == true  &&
+//               cell->face(face)->center()[2] == 0.0)
+//                       cell->face(face)->set_boundary_id(0);  //Bottom face
+//
+//           else if (cell->face(face)->at_boundary() == true  &&
+//                    cell->face(face)->center()[0] == 0.0       )
+//                    cell->face(face)->set_boundary_id(1); // Symmetry plane
+//
+//           else if (cell->face(face)->at_boundary() == true  &&
+//                    cell->face(face)->center()[0] > 0.0      &&
+//                    cell->face(face)->center()[2] > 0.0         )
+//                       cell->face(face)->set_boundary_id(2); //Spherical surface
+//        }
+//
+//     //Set manifolds
+//     const types::manifold_id  sphere_id = 0;
+//     const types::manifold_id  inner_id = 1;
+//
+//     const SphericalManifold<dim> spherical_manifold(mesh_center);
+//     TransfiniteInterpolationManifold<dim> inner_manifold;
+//
+//     //Assign manifold IDs
+//     for (const auto cell : this->triangulation.active_cell_iterators())
+//       if (cell->center()[2]>0.0)
+//               cell->set_all_manifold_ids(inner_id);
+//     this->triangulation.set_all_manifold_ids_on_boundary(2,sphere_id);
+//
+//     //Set manifold
+//     this->triangulation.set_manifold (sphere_id, spherical_manifold);
+//     inner_manifold.initialize(this->triangulation);
+//     this->triangulation.set_manifold (inner_id, inner_manifold);
+//
+//      //Refine mesh
+//      this->triangulation.refine_global(1);
+//      inner_manifold.initialize(this->triangulation);
+//      if (this->parameters.global_refinement > 1)
+//       this->triangulation.refine_global((this->parameters.global_refinement)-1);
+//
+//      //Scale geometry
+//      GridTools::scale(this->parameters.scale, this->triangulation);
+      
+      
+  }
+
+  virtual void
+  define_tracked_vertices(std::vector<Point<dim>> &tracked_vertices)
+  {
+    tracked_vertices[0][0] = 0.0*this->parameters.scale;
+    tracked_vertices[0][1] = 0.0*this->parameters.scale;
+    tracked_vertices[0][2] = 0.0*this->parameters.scale;
+      
+    tracked_vertices[1][0] = 0.0*this->parameters.scale;
+    tracked_vertices[1][1] = 0.0*this->parameters.scale;
+    tracked_vertices[1][2] = this->parameters.joint_radius
+                              *this->parameters.scale;
+  }
+
+  virtual void
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
+  {
+      VectorTools::interpolate_boundary_values
+                        (this->dof_handler_ref,
+                         0,
+                         ZeroFunction<dim>(this->n_components),
+                         constraints,
+                         this->fe.component_mask(this->z_displacement) );
+      
+      // Symmetry plane
+      VectorTools::interpolate_boundary_values
+                        (this->dof_handler_ref,
+                         3,
+                         ZeroFunction<dim>(this->n_components),
+                         constraints,
+                         this->fe.component_mask(this->x_displacement) );
+      
+       Point<dim> fix_node(0.0, 0.0,((this->parameters.joint_radius)
+                                      -(this->parameters.joint_length))
+                                    *this->parameters.scale              );
+
+       typename DoFHandler<dim>::active_cell_iterator
+       cell = this->dof_handler_ref.begin_active(),
+       endc = this->dof_handler_ref.end();
+       for (; cell != endc; ++cell)
+         for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+           if ( cell->face(face)->at_boundary() == true  &&
+                cell->face(face)->center()[2] == this->parameters.scale*
+                ((this->parameters.joint_radius)-(this->parameters.joint_length)) )
+             for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
+             {
+                 if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
+                       < (1.0e-6*this->parameters.scale) )
+                    constraints.add_line(cell->vertex_dof_index(node, 0));
+
+                 if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
+                       < (1.0e-6*this->parameters.scale) )
+                    constraints.add_line(cell->vertex_dof_index(node, 1));
+             }
+
+       if (this->time.get_timestep() < 2) //Dirichlet BC on pressure nodes
+       {
+         //All boundaries are drained, except symmetry plane
+           VectorTools::interpolate_boundary_values
+                   (this->dof_handler_ref,
+                    0,
+                    ConstantFunction<dim>(this->parameters.drained_pressure,
+                                          this->n_components),
+                    constraints,
+                    (this->fe.component_mask(this->pressure)));
+
+           VectorTools::interpolate_boundary_values
+                   (this->dof_handler_ref,
+                    1,
+                    ConstantFunction<dim>(this->parameters.drained_pressure,
+                                          this->n_components),
+                    constraints,
+                    (this->fe.component_mask(this->pressure)));
+
+           VectorTools::interpolate_boundary_values
+                   (this->dof_handler_ref,
+                    2,
+                    ConstantFunction<dim>(this->parameters.drained_pressure,
+                                          this->n_components),
+                    constraints,
+                    (this->fe.component_mask(this->pressure)));
+       }
+       else
+       {
+           VectorTools::interpolate_boundary_values
+                    (this->dof_handler_ref,
+                     0,
+                     ZeroFunction<dim>(this->n_components),
+                     constraints,
+                     (this->fe.component_mask(this->pressure)));
+
+           VectorTools::interpolate_boundary_values
+                    (this->dof_handler_ref,
+                     1,
+                     ZeroFunction<dim>(this->n_components),
+                     constraints,
+                     (this->fe.component_mask(this->pressure)));
+
+            VectorTools::interpolate_boundary_values
+                     (this->dof_handler_ref,
+                      2,
+                      ZeroFunction<dim>(this->n_components),
+                      constraints,
+                      (this->fe.component_mask(this->pressure)));
+       }
+
+       if (this->parameters.load_type == "displacement")
+       AssertThrow(false,
+          ExcMessage("Displacement loading not defined for the current problem: "
+                      + this->parameters.geom_type));
+  }
+
+  virtual Tensor<1,dim>
+  get_neumann_traction (const types::boundary_id &boundary_id,
+                        const Point<dim>         &pt,
+                        const Tensor<1,dim>      &N) const
+  {
+    Tensor<1,dim> load_vector;
+
+    if (this->parameters.load_type == "pressure")
+    {
+      if ( (boundary_id == 1) || (boundary_id == 2) )
+      {
+         // RADIUS
+         //Min and max polar angles of center of loading position (radius)
+         const double radius_phi_load_min = (this->parameters.radius_phi_min)
+                                      *(numbers::PI)/180.;
+         const double radius_phi_load_max = (this->parameters.radius_phi_max)
+                                      *(numbers::PI)/180.;
+         //Angular width in polar direction of loading (radius)
+         const double radius_d_phi_load  = (this->parameters.radius_phi_width)
+                                      *(numbers::PI)/180.;
+
+         //Min and max azimuthal angles of center of loading position (radius)
+         const double radius_theta_load_min = (this->parameters.radius_theta_min)
+                                        *(numbers::PI)/180.;
+         const double radius_theta_load_max = (this->parameters.radius_theta_max)
+                                        *(numbers::PI)/180.;
+         //Angular width in azimuthal direction of loading (radius)
+         const double radius_d_theta_load  = (this->parameters.radius_theta_width)
+                                        *(numbers::PI)/180.;
+
+         // ULNA
+         //Min and max polar angles of center of loading position (ulna)
+         const double ulna_phi_load_min = (this->parameters.ulna_phi_min)
+                                      *(numbers::PI)/180.;
+         const double ulna_phi_load_max = (this->parameters.ulna_phi_max)
+                                      *(numbers::PI)/180.;
+         //Angular width in polar direction of loading (ulna)
+         const double ulna_d_phi_load  = (this->parameters.ulna_phi_width)
+                                     *(numbers::PI)/180.;
+
+         //Min and max azimuthal angles of center of loading position (radius)
+         const double ulna_theta_load_min = (this->parameters.ulna_theta_min)
+                                        *(numbers::PI)/180.;
+         const double ulna_theta_load_max = (this->parameters.ulna_theta_max)
+                                        *(numbers::PI)/180.;
+         //Angular width in azimuthal direction of loading (radius)
+         const double ulna_d_theta_load  = (this->parameters.ulna_theta_width)
+                                        *(numbers::PI)/180.;
+
+         const unsigned int num_cycles = this->parameters.num_cycles;
+         const double current_time = this->time.get_current();
+         const double end_load_time = (this->time.get_delta_t())*
+                                (this->parameters.num_no_load_time_steps);
+         const double final_load_time = (this->time.get_end()) - end_load_time;
+
+         if (current_time <= final_load_time)
+         {
+           const double current_radius_phi_load = radius_phi_load_min
+           + (radius_phi_load_max - radius_phi_load_min)
+              *(1.0 - std::sin((numbers::PI)
+              *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
+           const double current_radius_theta_load = radius_theta_load_min
+           + (radius_theta_load_max - radius_theta_load_min)
+              *(1.0 - std::sin((numbers::PI)
+              *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
+           const double current_ulna_phi_load = ulna_phi_load_min
+           + (ulna_phi_load_max - ulna_phi_load_min)
+              *(1.0 - std::sin((numbers::PI)
+              *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
+           const double current_ulna_theta_load = ulna_theta_load_min
+           + (ulna_theta_load_max - ulna_theta_load_min)
+              *(1.0 - std::sin((numbers::PI)
+              *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
+
+           const JointLoadingPattern<dim>
+           radius_loading_pattern( current_radius_phi_load,
+                                   radius_d_phi_load,
+                                   current_radius_theta_load,
+                                   radius_d_theta_load         );
+           const JointLoadingPattern<dim>
+           ulna_loading_pattern( current_ulna_phi_load,
+                                 ulna_d_phi_load,
+                                 current_ulna_theta_load,
+                                 ulna_d_theta_load        );
+             
+           load_vector = ( radius_loading_pattern.value({pt[0],pt[1],pt[2]})
+                          + ulna_loading_pattern.value({pt[0],pt[1],pt[2]}) )
+                         * (this->parameters.load) * N;
+         }
+      }
+    }
+    return load_vector;
+  }
+
+  virtual double
+  get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                             const Point<dim>         &pt) const
+  {
+      //Silence compiler warnings
+      (void)pt;
+      (void)boundary_id;
+      return 0.0;
+  }
+
+  virtual std::pair<types::boundary_id,types::boundary_id>
+  get_reaction_boundary_id_for_output() const
+  {
+      return std::make_pair(1,1);
+  }
+
+  virtual std::pair<types::boundary_id,types::boundary_id>
+  get_drained_boundary_id_for_output() const
+  {
+      return std::make_pair(1,2);
+  }
+
+  virtual std::pair<double, FEValuesExtractors::Scalar>
+  get_dirichlet_load(const types::boundary_id &boundary_id) const
+  {
+      double displ_incr = 0;
+      FEValuesExtractors::Scalar direction;
+      (void)boundary_id;
+      return std::make_pair(displ_incr,direction);
+  }
+};
 }
 
 
@@ -6023,6 +6483,11 @@ try
     else if (parameters.geom_type == "idealised_humerus")
     {
       IdealisedHumerus<3> solid_3d(parameters);
+      solid_3d.run();
+    }
+    else if (parameters.geom_type == "idealised_humerus_reduced")
+    {
+      IdealisedHumerusReduced<3> solid_3d(parameters);
       solid_3d.run();
     }
     else
