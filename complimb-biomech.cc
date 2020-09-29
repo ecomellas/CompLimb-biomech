@@ -396,6 +396,10 @@ namespace CompLimb
     double growth_rate_mech;
     double growth_exponential_mech;
     double growth_rate_bio;
+    double growth_bio_coeff_0;
+    double growth_bio_coeff_1;
+    double growth_bio_coeff_2;
+    double growth_bio_coeff_3;
     std::string  fluid_type;
     double solid_vol_frac;
     double kappa_darcy;
@@ -516,11 +520,35 @@ namespace CompLimb
                         "dependency of growth on mechanical stimulus (linear, quadratic,"
                         " etc.) for mechanically-stimulated growth");
 
-    prm.declare_entry("growth rate bio", "1e3",
-                      Patterns::Double(0,1e6),
-                      "Biological growth rate (based on chondrocyte density) "
-                      "for joint growth.");
+      prm.declare_entry("growth rate bio", "1e3",
+                        Patterns::Double(0,1e6),
+                        "Biological growth rate (based on chondrocyte density) "
+                        "for joint growth.");
 
+      prm.declare_entry("growth bio coeff 0", "0.14",
+                        Patterns::Double(),
+                        "Coefficient for order 0 term of polynomial defining "
+                        "biological growth (based on chondrocyte density) "
+                        "for joint growth.");
+        
+      prm.declare_entry("growth bio coeff 1", "-0.87",
+                        Patterns::Double(),
+                        "Coefficient for order 1 term of polynomial defining "
+                        "biological growth (based on chondrocyte density) "
+                        "for joint growth.");
+        
+      prm.declare_entry("growth bio coeff 2", "4.40",
+                        Patterns::Double(),
+                        "Coefficient for order 2 term of polynomial defining "
+                        "biological growth (based on chondrocyte density) "
+                        "for joint growth.");
+        
+      prm.declare_entry("growth bio coeff 3", "-2.66",
+                        Patterns::Double(),
+                        "Coefficient for order 3 term of polynomial defining "
+                        "biological growth (based on chondrocyte density) "
+                        "for joint growth.");
+        
       prm.declare_entry("seepage definition", "Ehlers",
                         Patterns::Selection("Markert|Ehlers"),
                         "Type of formulation used to define the seepage velocity "
@@ -608,12 +636,20 @@ namespace CompLimb
         growth_rate_mech =  prm.get_double("growth incr");
         growth_exponential_mech = 0.0;
         growth_rate_bio = 0.0;
+        growth_bio_coeff_0 = 0.0;
+        growth_bio_coeff_1 = 0.0;
+        growth_bio_coeff_2 = 0.0;
+        growth_bio_coeff_3 = 0.0;
       }
       else if ( growth_type == "pressure" )
       {
         growth_rate_mech =  prm.get_double("growth rate mech");
         growth_exponential_mech =  prm.get_double("growth exponential mech");
         growth_rate_bio = 0.0;
+        growth_bio_coeff_0 = 0.0;
+        growth_bio_coeff_1 = 0.0;
+        growth_bio_coeff_2 = 0.0;
+        growth_bio_coeff_3 = 0.0;
       }
 
       else if ( (growth_type == "joint-pressure")||(growth_type == "joint-div-vel"))
@@ -621,12 +657,20 @@ namespace CompLimb
         growth_rate_mech =  prm.get_double("growth rate mech");
         growth_exponential_mech =  prm.get_double("growth exponential mech");
         growth_rate_bio =  prm.get_double("growth rate bio");
+        growth_bio_coeff_0 = prm.get_double("growth bio coeff 0");
+        growth_bio_coeff_1 = prm.get_double("growth bio coeff 1");
+        growth_bio_coeff_2 = prm.get_double("growth bio coeff 2");
+        growth_bio_coeff_3 = prm.get_double("growth bio coeff 3");
       }
       else
       {
         growth_rate_mech = 0.0;
         growth_exponential_mech = 0.0;
         growth_rate_bio = 0.0;
+        growth_bio_coeff_0 = 0.0;
+        growth_bio_coeff_1 = 0.0;
+        growth_bio_coeff_2 = 0.0;
+        growth_bio_coeff_3 = 0.0;
       }
       //Fluid
       fluid_type = prm.get("seepage definition");
@@ -935,6 +979,10 @@ class Material_Hyperelastic
           growth_rate_mech(parameters.growth_rate_mech),
           growth_exponential_mech(parameters.growth_exponential_mech),
           growth_rate_bio(parameters.growth_rate_bio),
+          growth_bio_coeff_0(growth_bio_coeff_0),
+          growth_bio_coeff_1(growth_bio_coeff_1),
+          growth_bio_coeff_2(growth_bio_coeff_2),
+          growth_bio_coeff_3(growth_bio_coeff_3),
           joint_length(parameters.joint_length),
           joint_radius(parameters.joint_radius),
           time(time),
@@ -1043,6 +1091,10 @@ class Material_Hyperelastic
     const double growth_rate_mech; //Growth rate. For morphogen growth, increment per timestep
     const double growth_exponential_mech;
     const double growth_rate_bio;
+    const double growth_bio_coeff_0;
+    const double growth_bio_coeff_1;
+    const double growth_bio_coeff_2;
+    const double growth_bio_coeff_3;
     const double joint_length;
     const double joint_radius;
     const Time  &time;
@@ -1087,7 +1139,10 @@ class Material_Hyperelastic
             const double chi = (pt[dim-1] + joint_length - joint_radius)/
                                joint_length;
             growth_criterion = growth_rate_bio
-                                *(0.14-0.87*chi+4.40*chi*chi-2.66*chi*chi*chi);
+                                *(growth_bio_coeff_0 +
+                                  growth_bio_coeff_1*chi +
+                                  growth_bio_coeff_2*chi*chi +
+                                  growth_bio_coeff_3*chi*chi*chi);
 
             //Mechanical part
             double tolerance = 1.0e-6;
@@ -1103,7 +1158,10 @@ class Material_Hyperelastic
             const double chi = (pt[dim-1] + joint_length - joint_radius)/
                                joint_length;
             growth_criterion = growth_rate_bio
-                                *(0.14-0.87*chi+4.40*chi*chi-2.66*chi*chi*chi);
+                                *(growth_bio_coeff_0 +
+                                  growth_bio_coeff_1*chi +
+                                  growth_bio_coeff_2*chi*chi +
+                                  growth_bio_coeff_3*chi*chi*chi);
 
             //Velocity-driven part
             double tolerance = 1.0e-6;

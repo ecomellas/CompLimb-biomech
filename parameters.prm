@@ -21,7 +21,7 @@
        #                  | cube_growth_confined_drained | cube_growth_confined_undrained
        #                  | cube_growth_unconfined_drained | cube_growth_unconfined_undrained
        #                  | idealised_humerus | idealised_humerus_reduced
-       set Geometry type       = idealised_humerus_reduced
+       set Geometry type       = idealised_humerus
      
        # Global refinement level (higher value means finer mesh)
        set Global refinement   = 2
@@ -44,16 +44,17 @@
        # ===== idealised_half_joint only =====
      
        # Joint rudiment dimensions [mm] (this will be multiplied by grid scale above)
-       set Joint length = 1.75
-       set Joint radius = 0.5
+       set Joint length = 0.70
+       set Joint radius = 0.20
      
        # Polar angle range and angle width of contact area, all angles given in degrees
        # 0 deg coincides with positive z-axis direction and corresponds to top of spherical cap
-       set Radius phi min   = 40
-       set Radius phi max   = 90
+       # 50 deg & 23 deg (radius/ulna) +/- 20 deg
+       set Radius phi min   = 30
+       set Radius phi max   = 70
        set Radius phi width = 10
-       set Ulna phi min     = 70
-       set Ulna phi max     = 20
+       set Ulna phi min     = 43
+       set Ulna phi max     = 3
        set Ulna phi width   = 6
      
        # Azimuthal angle range and angle width of contact area, all angles given in degrees
@@ -137,7 +138,7 @@
      
      
        # Type of continuum growth: none | morphogen | pressure | joint-pressure | joint-div-vel
-       set growth               = joint-div-vel
+       set growth               = joint-pressure
      
        # ===== Morphogenetic growth only =====
      
@@ -146,16 +147,28 @@
      
        # ===== Pressure-driven or joint growth only =====
      
-       # Growth rate
-       set growth rate mech = 1.0e1
+       # Mechanical growth rate
+       set growth rate mech = 1.5e-3
      
        # Nature of the dependency of growth on the mechanical stimuli (linear, quadratic, etc.)
        set growth exponential mech = 1.0
      
        # ===== Joint growth only =====
      
-       # Biological parameters
+       # Biological growth rate
        set growth rate bio = 5.0e-3
+	
+	# Polynomial coefficient order 0
+       set growth bio coeff 0 = 0.14
+
+	# Polynomial coefficient order 1
+       set growth bio coeff 1 = -0.87
+
+	# Polynomial coefficient order 2
+       set growth bio coeff 2 = 4.40
+
+	# Polynomial coefficient order 3
+       set growth bio coeff 3 = -2.66
      
        # ------------------------ FLUID ----------------------------------
      
@@ -168,7 +181,7 @@
        set initial solid volume fraction    = 0.75
      
        # Deformation-dependency control parameter for specific permeability [kappa >= 0]
-       set kappa                            = 10
+       set kappa                            = 1
      
        # ===== Markert only =====
      
