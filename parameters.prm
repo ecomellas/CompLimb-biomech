@@ -20,8 +20,8 @@
        # Type of geometry:  growing_muffin | trapped_turtle
        #                  | cube_growth_confined_drained | cube_growth_confined_undrained
        #                  | cube_growth_unconfined_drained | cube_growth_unconfined_undrained
-       #                  | idealised_humerus
-       set Geometry type       = idealised_humerus
+       #                  | idealised_humerus | idealised_humerus_reduced
+       set Geometry type       = idealised_humerus_reduced
      
        # Global refinement level (higher value means finer mesh)
        set Global refinement   = 2
