@@ -18,15 +18,44 @@ import time
 #-------------------------------------------------------------------------------
 # Modify parameters to study sensitivity
 #-------------------------------------------------------------------------------
-gammas = ["1.0"]
-kbios = ["5.0e-3"]
-kmechs = ["1.5e-3","5.0e-3"]
+loads = ["-1850","-9250"]
+roms = [20,10]
+ks = [1,2,3,4,5]
 
-for gamma in gammas:
-    for kbio in kbios:
-        for kmech in kmechs:
+for load in loads:
+    for rom in roms:
+        
+        # compute angles for radius and ulna loads
+        radius_phi_min = str(50 - rom)
+        radius_phi_max = str(50 + rom)
+        ulna_phi_min = str(23 - rom)
+        ulna_phi_max = str(23 + rom)
+        
+        for k in ks:
+        
+            # define kbio and kmech combinations
+            if k==1:
+                kbio  = "1.0e-3"
+                kmech = "0.0"
+                
+            elif k==2:
+                kbio  = "0.0"
+                kmech = "1.0e-3"
+                                
+            elif k==3:
+                kbio  = "1.0e-3"
+                kmech = "1.0e-3"
+                                
+            elif k==4:
+                kbio  = "1.0e-2"
+                kmech = "1.0e-3"
+                                
+            else:
+                kbio  = "1.0e-3"
+                kmech = "1.0e-2"
+    
             # define jobname
-            jobname = "kbio_"+kbio+"__kmech_"+kmech+"__gamma_"+gamma
+            jobname = "load_"+load+"__rom_"+str(rom)+"__kbio_"+kbio+"__kmech_"+kmech
             
             # create new folder, copy parameters and slurm files into it
             cwd = os.getcwd()
@@ -42,12 +71,20 @@ for gamma in gammas:
             
             x = fileinput.input("parameters.prm", inplace=1)
             for line in x:
+                if "set Load value" in line:
+                    line = "set Load value          = "+load+"\n"
+                if "set Radius phi min" in line:
+                    line = "set Radius phi min   = "+radius_phi_min+"\n"
+                if "set Radius phi max" in line:
+                    line = "set Radius phi max   = "+radius_phi_max+"\n"
+                if "set Ulna phi min" in line:
+                    line = "set Ulna phi min   = "+ulna_phi_min+"\n"
+                if "set Ulna phi max" in line:
+                    line = "set Ulna phi max   = "+ulna_phi_max+"\n"
                 if "set growth rate mech" in line:
-                    line = "  set growth rate mech = "+kmech+"\n"
-                if "set growth exponential mech" in line:
-                    line = "  set growth exponential mech = "+gamma+"\n"
+                    line = "set growth rate mech = "+kmech+"\n"
                 if "set growth rate bio" in line:
-                    line = "  set growth rate bio = "+kbio+"\n"
+                    line = "set growth rate bio = "+kbio+"\n"
                 print (line, end = ' '),
             x.close()
 
