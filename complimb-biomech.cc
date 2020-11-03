@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------------
  *
  * Copyright (C) 2010 - 2020 by the deal.II authors and
- *                              Ester Comellas 
+ *                              Ester Comellas
  *
  * This file is part of the deal.II library.
  *
@@ -18,17 +18,17 @@
  *  Author: Ester Comellas
  *          Northeastern University and
  *          Universitat Politècnica de Catalunya, 2019
- *  
+ *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
- *  
+ *
  *  This program is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
- *  
+ *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
@@ -184,16 +184,14 @@ namespace CompLimb
       double       joint_radius;
       double       radius_phi_min;
       double       radius_phi_max;
-      double       radius_phi_width;
-      double       ulna_phi_min;
-      double       ulna_phi_max;
-      double       ulna_phi_width;
       double       radius_theta_min;
       double       radius_theta_max;
-      double       radius_theta_width;
+      double       radius_area_r;
       double       ulna_theta_min;
       double       ulna_theta_max;
-      double       ulna_theta_width;
+      double       ulna_phi_min;
+      double       ulna_phi_max;
+      double       ulna_area_r;
       unsigned int num_cycles;
       unsigned int num_no_load_time_steps;
 
@@ -264,11 +262,22 @@ namespace CompLimb
                           "corresponding to the effect of the radius, "
                           "only for idealised_humerus.");
 
-         prm.declare_entry("Radius phi width", "8.",
-                           Patterns::Double(0,360),
-                           "Angular width in polar direction (in degrees) of "
-                           "load contact corresponding to the effect of the "
-                           "radius, only for idealised_humerus.");
+          prm.declare_entry("Radius theta min", "90.",
+                            Patterns::Double(0,360),
+                           "Initial polar angle (in degrees) of loading cycle "
+                           "corresponding to the effect of the radius, "
+                           "only for idealised_humerus.");
+
+          prm.declare_entry("Radius theta max", "90.",
+                            Patterns::Double(0,360),
+                            "Final polar angle (in degrees) of loading cycle "
+                            "corresponding to the effect of the radius, "
+                            "only for idealised_humerus.");
+
+         prm.declare_entry("Radius area radius", "0.25",
+                           Patterns::Double(0,1e6),
+                           "Radius of load contact area corresponding to "
+                           "the effect of the radius, only for idealised_humerus.");
 
          prm.declare_entry("Ulna phi min", "40.",
                            Patterns::Double(0,360),
@@ -282,30 +291,6 @@ namespace CompLimb
                            "corresponding to the effect of the ulna, "
                            "only for idealised_humerus.");
 
-          prm.declare_entry("Ulna phi width", "8.",
-                            Patterns::Double(0,360),
-                            "Angular width in polar direction (in degrees) of "
-                            "load contact corresponding to the effect of the "
-                            "ulna, only for idealised_humerus.");
-
-         prm.declare_entry("Radius theta min", "90.",
-                           Patterns::Double(0,360),
-                          "Initial polar angle (in degrees) of loading cycle "
-                          "corresponding to the effect of the radius, "
-                          "only for idealised_humerus.");
-
-         prm.declare_entry("Radius theta max", "90.",
-                           Patterns::Double(0,360),
-                           "Final polar angle (in degrees) of loading cycle "
-                           "corresponding to the effect of the radius, "
-                           "only for idealised_humerus.");
-
-         prm.declare_entry("Radius theta width", "10.",
-                           Patterns::Double(0,360),
-                           "Angular width in polar direction (in degrees) of "
-                           "load contact corresponding to the effect of the "
-                           "ulna, only for idealised_humerus.");
-
           prm.declare_entry("Ulna theta min", "90.",
                             Patterns::Double(0,360),
                            "Initial polar angle (in degrees) of loading cycle "
@@ -318,11 +303,10 @@ namespace CompLimb
                             "corresponding to the effect of the ulna, "
                             "only for idealised_humerus.");
 
-          prm.declare_entry("Ulna theta width", "10.",
-                            Patterns::Double(0,360),
-                            "Angular width in polar direction (in degrees) of "
-                            "load contact corresponding to the effect of the "
-                            "ulna, only for idealised_humerus.");
+          prm.declare_entry("Ulna area radius", "0.1",
+                            Patterns::Double(0,1e6),
+                            "Radius of load contact area corresponding to "
+                            "the effect of the ulna, only for idealised_humerus.");
 
          prm.declare_entry("Number of cycles", "1",
                            Patterns::Integer(1,1e6),
@@ -352,16 +336,14 @@ namespace CompLimb
         joint_radius = prm.get_double("Joint radius");
         radius_phi_min = prm.get_double("Radius phi min");
         radius_phi_max = prm.get_double("Radius phi max");
-        radius_phi_width = prm.get_double("Radius phi width");
-        ulna_phi_min = prm.get_double("Ulna phi min");
-        ulna_phi_max = prm.get_double("Ulna phi max");
-        ulna_phi_width = prm.get_double("Ulna phi width");
         radius_theta_min = prm.get_double("Radius theta min");
         radius_theta_max = prm.get_double("Radius theta max");
-        radius_theta_width = prm.get_double("Radius theta width");
+        radius_area_r = prm.get_double("Radius area radius");
+        ulna_phi_min = prm.get_double("Ulna phi min");
+        ulna_phi_max = prm.get_double("Ulna phi max");
         ulna_theta_min = prm.get_double("Ulna theta min");
         ulna_theta_max = prm.get_double("Ulna theta max");
-        ulna_theta_width = prm.get_double("Ulna theta width");
+        ulna_area_r = prm.get_double("Ulna area radius");
         num_cycles = prm.get_integer("Number of cycles");
         num_no_load_time_steps = prm.get_integer("Number of no-load time steps");
       }
@@ -530,25 +512,25 @@ namespace CompLimb
                         "Coefficient for order 0 term of polynomial defining "
                         "biological growth (based on chondrocyte density) "
                         "for joint growth.");
-        
+
       prm.declare_entry("growth bio coeff 1", "-0.87",
                         Patterns::Double(),
                         "Coefficient for order 1 term of polynomial defining "
                         "biological growth (based on chondrocyte density) "
                         "for joint growth.");
-        
+
       prm.declare_entry("growth bio coeff 2", "4.40",
                         Patterns::Double(),
                         "Coefficient for order 2 term of polynomial defining "
                         "biological growth (based on chondrocyte density) "
                         "for joint growth.");
-        
+
       prm.declare_entry("growth bio coeff 3", "-2.66",
                         Patterns::Double(),
                         "Coefficient for order 3 term of polynomial defining "
                         "biological growth (based on chondrocyte density) "
                         "for joint growth.");
-        
+
       prm.declare_entry("seepage definition", "Ehlers",
                         Patterns::Selection("Markert|Ehlers"),
                         "Type of formulation used to define the seepage velocity "
@@ -1023,7 +1005,7 @@ class Material_Hyperelastic
         //Here the "whole" F is needed
         return (get_tau_E(Fve)*NumberType(1/det_F));
      }
-    
+
     // Retrieve stored det_Fve
     double get_converged_det_Fve() const
     {
@@ -1063,19 +1045,19 @@ class Material_Hyperelastic
         //Growth
 //        const double p_fluid = Tensor<0,dim,double>(p_fluid_AD);
         double mech_growth_stimulus;
-        
+
         //No mechanical stimulus
         if ((growth_type == "none")||(growth_type == "morphogen"))
             mech_growth_stimulus = 0.0;
-        
+
         //Mechanical stimulus is pressure
         else if ((growth_type == "pressure")||(growth_type == "joint-pressure"))
             mech_growth_stimulus = Tensor<0,dim,double>(p_fluid_AD);
-            
+
         //Mechanical stimulus is divergence if seepage velocity
         else if (growth_type == "joint-div-vel")
             mech_growth_stimulus = Tensor<0,dim,double>(div_seepage_vel);
-        
+
         else
             AssertThrow(false, ExcMessage("Growth type not implemented yet."));
 
@@ -1171,7 +1153,7 @@ class Material_Hyperelastic
         }
         else
             AssertThrow(false, ExcMessage("Growth type not implemented yet."));
-        
+
         return growth_criterion;
 
     }
@@ -1738,11 +1720,11 @@ class Material_Darcy_Fluid
         // Compute fluid material parameters required and do some checks
         const NumberType det_F = determinant(F);
         Assert(det_F>0.0, ExcInternalError());
-        
+
         if (fluid_type != "Markert")
             AssertThrow(false, ExcMessage("Growth driven by divergence of seepage velocity "
                            "has been implemented for Markert formulation only."));
-        
+
         static const SymmetricTensor<2,dim,double>
             I(Physics::Elasticity::StandardTensors<dim>::I);
         const Tensor<2,dim,NumberType> initial_instrinsic_permeability_tensor_T
@@ -1753,17 +1735,17 @@ class Material_Darcy_Fluid
         const NumberType denominator = NumberType (std::pow( (1 - n_OS), kappa_darcy));
         const Tensor<1,dim,NumberType> func_grad_det_F
                      = (kappa_darcy * numerator / denominator) * grad_det_F;
-        
+
         // Double contraction following Holzapfel notation, i.e.  A:B = A_ij B_ij
         NumberType div_seepage_vel = NumberType(
             (grad_p_fluid - get_body_force_FR_current())
                * (func_grad_det_F * initial_instrinsic_permeability_tensor_T))
              + double_contract<0,0,1,1>
                 (instrinsic_permeability_tensor_T,hess_p_fluid);
-        
+
         return (-1.0 / viscosity_FR * div_seepage_vel);
     }
-    
+
      double get_porous_dissipation
                         (const Tensor<2,dim,NumberType> &F,
                          const Tensor<1,dim,NumberType> &grad_p_fluid) const
@@ -1948,7 +1930,7 @@ class PointHistory
         {
             return fluid_material->get_div_seepage_vel(grad_p_fluid,hess_p_fluid,grad_det_F,F);
         }
-    
+
         double get_porous_dissipation
                 (const Tensor<2,dim,NumberType> &F,
                  const Tensor<1,dim,NumberType> &grad_p_fluid) const
@@ -2519,7 +2501,7 @@ struct Solid<dim>::ScratchData_ASM
       symm_grad_Nx(rhs.symm_grad_Nx),
       grad_Nx_p_fluid(rhs.grad_Nx_p_fluid)
     {}
-    
+
     void reset()
     {
       const unsigned int n_q_points = Nx_p_fluid.size();
@@ -2537,7 +2519,7 @@ struct Solid<dim>::ScratchData_ASM
       Assert(solution_values_p_fluid_total.size() == n_q_points, ExcInternalError());
       Assert(solution_grads_p_fluid_total.size() == n_q_points, ExcInternalError());
       Assert(solution_hess_p_fluid_total.size() == n_q_points, ExcInternalError());
-        
+
       Assert(Nx.size() == n_q_points, ExcInternalError());
       Assert(grad_Nx.size() == n_q_points, ExcInternalError());
       Assert(symm_grad_Nx.size() == n_q_points, ExcInternalError());
@@ -2563,7 +2545,7 @@ struct Solid<dim>::ScratchData_ASM
               grad_Nx_p_fluid[q_point][k] = 0.0;
             }
         }
-        
+
       const unsigned int n_f_q_points = solution_grads_face_p_fluid_total.size();
       Assert(solution_grads_face_p_fluid_total.size() == n_f_q_points, ExcInternalError());
 
@@ -3176,7 +3158,7 @@ void Solid<dim>::assemble_system_one_cell
                         // Gradient of displ
                         scratch.solution_grads_u_total[q][dd][ee]
                           += scratch.local_dof_values[k] * Grad_Nx_u[dd][ee];
-                
+
                         for (unsigned int ff=0; ff<dim; ff++)
                           // Hessian of displ
                           scratch.solution_hess_u_total[q][dd][ee][ff]
@@ -3194,7 +3176,7 @@ void Solid<dim>::assemble_system_one_cell
                 // Value of pressure
                 scratch.solution_values_p_fluid_total[q]
                           += scratch.local_dof_values[k] * Nx_p;
-                
+
                 for (unsigned int dd = 0; dd < dim; dd++)
                 {
                     // Gradient of pressure
@@ -3204,7 +3186,7 @@ void Solid<dim>::assemble_system_one_cell
                     // Hessian of pressure
                     scratch.solution_hess_p_fluid_total[q][dd][ee]
                       += scratch.local_dof_values[k] * Hessian_Nx_p[dd][ee];
-                    
+
                 }
             }
             else
@@ -3272,7 +3254,7 @@ void Solid<dim>::assemble_system_one_cell
         const std::vector<double> &Np = scratch.Nx_p_fluid[q_point];
         const std::vector<Tensor<1,dim,ADNumberType>> &grad_Np
                                         = scratch.grad_Nx_p_fluid[q_point];
-          
+
         // Pressure
         const ADNumberType p_fluid_AD =
                                 scratch.solution_values_p_fluid_total[q_point];
@@ -3286,27 +3268,27 @@ void Solid<dim>::assemble_system_one_cell
        // Hessian of displacements in ref configuration
        const Tensor<3,dim,ADNumberType> hess_u_AD
             = scratch.solution_hess_u_total[q_point];
-        
+
         // Gradient of determinat of F
         const Tensor<1,dim,ADNumberType> grad_det_F_AD = det_F_AD * double_contract<0,0,1,1>(transpose(F_inv_AD), hess_u_AD);
-        
+
         // Quadrature weight
         const double JxW = scratch.fe_values_ref.JxW(q_point);
-        
+
         // Current quadrature point
         const Point<dim> pt = scratch.fe_values_ref.quadrature_point(q_point);
-          
+
         // Update internal equilibrium
         {
           PointHistory<dim, ADNumberType> *lqph_q_point_nc
               = const_cast<PointHistory<dim,ADNumberType>*>(lqph[q_point].get());
-        
+
           const ADNumberType div_seepage_vel_AD
               =  lqph_q_point_nc->get_div_seepage_vel(grad_p_fluid_AD,
                                                       hess_p_fluid_AD,
                                                       grad_det_F_AD,
                                                       F_AD);
-            
+
           lqph_q_point_nc->update_internal_equilibrium(F_AD, p_fluid_AD, div_seepage_vel_AD, pt);
         }
 
@@ -3671,7 +3653,7 @@ template <int dim> void Solid<dim>::output_results_to_vtu
   AssertThrow(vertex_vec_handler_ref.n_dofs() == (dim*triangulation.n_vertices()),
     ExcDimensionMismatch(vertex_vec_handler_ref.n_dofs(),
                          (dim*triangulation.n_vertices())));
-  
+
   Vector<double> seepage_velocity_vertex_vec_mpi(vertex_vec_handler_ref.n_dofs());
   Vector<double> sum_seepage_velocity_vertex_vec(vertex_vec_handler_ref.n_dofs());
   Vector<double> counter_on_vertices_vec_mpi(vertex_vec_handler_ref.n_dofs());
@@ -3714,7 +3696,7 @@ template <int dim> void Solid<dim>::output_results_to_vtu
   {
       Assert(cell->is_locally_owned(), ExcInternalError());
       Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
-      
+
       material_id(cell->active_cell_index())=
          static_cast<int>(cell->material_id());
 
@@ -3724,7 +3706,7 @@ template <int dim> void Solid<dim>::output_results_to_vtu
       std::vector<double> solution_values_p_fluid(n_q_points);
       fe_values_ref[p_fluid_fe].get_function_values(solution_total,
                                                     solution_values_p_fluid);
-      
+
       std::vector<Tensor<2,dim>> solution_grads_u(n_q_points);
       fe_values_ref[u_fe].get_function_gradients(solution_total,
                                                  solution_grads_u);
@@ -3732,15 +3714,15 @@ template <int dim> void Solid<dim>::output_results_to_vtu
       std::vector<Tensor<1,dim>> solution_grads_p_fluid(n_q_points);
       fe_values_ref[p_fluid_fe].get_function_gradients(solution_total,
                                                        solution_grads_p_fluid);
-      
+
       std::vector<Tensor<2,dim>> solution_hess_p_fluid(n_q_points);
       fe_values_ref[p_fluid_fe].get_function_hessians(solution_total,
                                                       solution_hess_p_fluid);
-      
+
       std::vector<Tensor<3,dim>> solution_hess_u(n_q_points);
       fe_values_ref[u_fe].get_function_hessians(solution_total,
                                                 solution_hess_u);
-      
+
       // Start gauss point loop
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
@@ -3787,10 +3769,10 @@ template <int dim> void Solid<dim>::output_results_to_vtu
           const Tensor<2,dim,ADNumberType> F_inv_T = transpose(F_inv);
           const Tensor<2,dim,ADNumberType> hess_p_fluid_AD =
                                    F_inv_T*solution_hess_p_fluid[q_point]*F_inv;
-          
+
           // Hessian of displacements in ref configuration
           const Tensor<3,dim,ADNumberType> hess_u_AD = solution_hess_u[q_point];
-           
+
           // Gradient of determinat of F
           const Tensor<1,dim,ADNumberType> grad_det_F_AD = det_F_AD * double_contract<0,0,1,1>(F_inv_T, hess_u_AD);
           const ADNumberType div_seepage_vel_AD
@@ -3798,12 +3780,12 @@ template <int dim> void Solid<dim>::output_results_to_vtu
                                                     hess_p_fluid_AD,
                                                     grad_det_F_AD,
                                                     F_AD);
-          
+
           const double div_seepage_vel = Tensor<0,dim,double>(div_seepage_vel_AD);
 
           // Norm of seepage velocity
           const double norm_seepage_vel = Tensor<0,dim,double>(seepage_vel_AD.norm());
-          
+
           //Dissipations
           const double porous_dissipation =
             lqph[q_point]->get_porous_dissipation(F_AD, grad_p_fluid_AD);
@@ -3835,7 +3817,7 @@ template <int dim> void Solid<dim>::output_results_to_vtu
               }
               growth_stretch_elements(cell->active_cell_index())
                 += growth_stretch/n_q_points;
-              
+
               div_seepage_velocity_elements(cell->active_cell_index())
                   += div_seepage_vel/n_q_points;
               norm_seepage_velocity_elements(cell->active_cell_index())
@@ -3888,12 +3870,12 @@ template <int dim> void Solid<dim>::output_results_to_vtu
                 }
                 growth_stretch_vertex_mpi(local_vertex_indices)
                   += growth_stretch;
-                
+
                 div_seepage_velocity_vertex_mpi(local_vertex_indices)
                   += div_seepage_vel;
                 norm_seepage_velocity_vertex_mpi(local_vertex_indices)
                   += norm_seepage_vel;
-                
+
                 porous_dissipation_vertex_mpi(local_vertex_indices)
                   += porous_dissipation;
                 viscous_dissipation_vertex_mpi(local_vertex_indices)
@@ -3948,7 +3930,7 @@ template <int dim> void Solid<dim>::output_results_to_vtu
           sum_norm_seepage_velocity_vertex[d] =
              Utilities::MPI::sum(norm_seepage_velocity_vertex_mpi[d],
                                  mpi_communicator);
-        
+
           for (unsigned int k=0; k<num_comp_symm_tensor; ++k)
           {
             sum_cauchy_stresses_total_vertex[k][d] =
@@ -3965,7 +3947,7 @@ template <int dim> void Solid<dim>::output_results_to_vtu
                                     mpi_communicator);
           }
         }
-      
+
         for (unsigned int d=0; d<(vertex_vec_handler_ref.n_dofs()); ++d)
         {
             sum_counter_on_vertices_vec[d] =
@@ -4275,7 +4257,7 @@ template <int dim> void Solid<dim>::output_bcs_to_vtu
   {
       Assert(cell->is_locally_owned(), ExcInternalError());
       Assert(cell->subdomain_id() == this_mpi_process, ExcInternalError());
-      
+
       material_id(cell->active_cell_index())=static_cast<int>(cell->material_id());
 
       const UpdateFlags uf_face(update_quadrature_points | update_normal_vectors |
@@ -4341,7 +4323,7 @@ template <int dim> void Solid<dim>::output_bcs_to_vtu
             Utilities::MPI::sum(loads_vertex_vec_mpi[d],
                                 mpi_communicator);
       }
-      
+
       for (unsigned int d=0; d<(vertex_vec_handler_ref.n_dofs()); ++d)
       {
         if (sum_counter_on_vertices_vec[d]>0)
@@ -4387,7 +4369,7 @@ template <int dim> void Solid<dim>::output_bcs_to_vtu
                                   face_comp_type_vec);
   }
 //---------------------------------------------------------------------
-  
+
   if (parameters.poly_degree_output == 0)
     data_out_face.build_patches (parameters.poly_degree_displ);
   else
@@ -5654,35 +5636,40 @@ class JointLoadingPattern : public Functions::Spherical<dim>
 {
 public:
   JointLoadingPattern(const double phi_load,     //Polar angle of center of loading position
-                      const double d_phi_load,   //margin of load surface in polar direction
                       const double theta_load,   //Azimuthal angle of center of loading position
-                      const double d_theta_load) //margin of load surface in azimuthal direction
+                      const double r_load,        //maximum radius of load contact surface
+                      const double joint_r)        //sphere radius of geometry representing joint
   : Functions::Spherical<dim>(),
    phi_load(phi_load),
-   d_phi_load(d_phi_load),
    theta_load(theta_load),
-   d_theta_load(d_theta_load)
+   r_load(r_load),
+   joint_r(joint_r)
 {}
 
 private:
   virtual double svalue(const std::array<double,dim> &sp,
                         const unsigned int /*component*/) const;
   const double phi_load;
-  const double d_phi_load;
   const double theta_load;
-  const double d_theta_load;
+  const double r_load;
+  const double joint_r;
 };
 
 template <int dim>
 double JointLoadingPattern<dim>::svalue(const std::array<double,dim> &sp,
                                         const unsigned int /*component*/) const
 {
-  double val = 0.0;
-  const double &theta = sp[1]; //Azimuthal angle
-  const double &phi = sp[2];   //Polar angle
-  if ((std::abs(phi_load-phi)<d_phi_load)   &&
-      (std::abs(theta_load-theta)<d_theta_load) )
-    val = 1.0;
+   double val = 0.0;
+   const double &theta_p = sp[1]; //Azimuthal angle
+   const double &phi_p = sp[2];   //Polar angle
+
+   const double dist = joint_r *
+                       std::acos( (std::sin(phi_p))*(std::sin(phi_load))*
+                                  (std::cos(theta_p - theta_load)) +
+                                  (std::cos(phi_p))*(std::cos(phi_load))  );
+
+  if (std::abs(dist) <= r_load)
+    val = std::cos(dist*(numbers::PI)/(2*r_load));
 
   Assert (dealii::numbers::is_finite(val), ExcInternalError());
   return val;
@@ -5924,17 +5911,11 @@ private:
                                       *(numbers::PI)/180.;
          const double radius_phi_load_max = (this->parameters.radius_phi_max)
                                       *(numbers::PI)/180.;
-         //Angular width in polar direction of loading (radius)
-         const double radius_d_phi_load  = (this->parameters.radius_phi_width)
-                                      *(numbers::PI)/180.;
 
          //Min and max azimuthal angles of center of loading position (radius)
          const double radius_theta_load_min = (this->parameters.radius_theta_min)
                                         *(numbers::PI)/180.;
          const double radius_theta_load_max = (this->parameters.radius_theta_max)
-                                        *(numbers::PI)/180.;
-         //Angular width in azimuthal direction of loading (radius)
-         const double radius_d_theta_load  = (this->parameters.radius_theta_width)
                                         *(numbers::PI)/180.;
 
          // ULNA
@@ -5943,17 +5924,11 @@ private:
                                       *(numbers::PI)/180.;
          const double ulna_phi_load_max = (this->parameters.ulna_phi_max)
                                       *(numbers::PI)/180.;
-         //Angular width in polar direction of loading (ulna)
-         const double ulna_d_phi_load  = (this->parameters.ulna_phi_width)
-                                     *(numbers::PI)/180.;
 
          //Min and max azimuthal angles of center of loading position (radius)
          const double ulna_theta_load_min = (this->parameters.ulna_theta_min)
                                         *(numbers::PI)/180.;
          const double ulna_theta_load_max = (this->parameters.ulna_theta_max)
-                                        *(numbers::PI)/180.;
-         //Angular width in azimuthal direction of loading (radius)
-         const double ulna_d_theta_load  = (this->parameters.ulna_theta_width)
                                         *(numbers::PI)/180.;
 
          const unsigned int num_cycles = this->parameters.num_cycles;
@@ -5983,15 +5958,15 @@ private:
 
            const JointLoadingPattern<dim>
            radius_loading_pattern( current_radius_phi_load,
-                                   radius_d_phi_load,
                                    current_radius_theta_load,
-                                   radius_d_theta_load         );
+                                   this->parameters.radius_area_r,
+                                   this->parameters.joint_radius);
            const JointLoadingPattern<dim>
            ulna_loading_pattern( current_ulna_phi_load,
-                                 ulna_d_phi_load,
                                  current_ulna_theta_load,
-                                 ulna_d_theta_load        );
-             
+                                 this->parameters.ulna_area_r,
+                                 this->parameters.joint_radius);
+
            load_vector = ( radius_loading_pattern.value({pt[0],pt[1],pt[2]})
                           + ulna_loading_pattern.value({pt[0],pt[1],pt[2]}) )
                          * (this->parameters.load) * N;
@@ -6014,7 +5989,7 @@ private:
   virtual std::pair<types::boundary_id,types::boundary_id>
   get_reaction_boundary_id_for_output() const
   {
-      return std::make_pair(1,1);
+      return std::make_pair(1,2);
   }
 
   virtual std::pair<types::boundary_id,types::boundary_id>
@@ -6178,9 +6153,9 @@ private:
 //
 //      //Scale geometry
 //      GridTools::scale(this->parameters.scale, this->triangulation);
-      
-      
-      
+
+
+
 //      double radius = this->parameters.joint_radius;
 //      const Point<dim> mesh_center(0.0,0.0,0.0);
 //      Triangulation<dim>  tria_half_sphere;
@@ -6252,8 +6227,8 @@ private:
 //
 //      //Scale geometry
 //      GridTools::scale(this->parameters.scale, this->triangulation);
-      
-      
+
+
   }
 
   virtual void
@@ -6262,7 +6237,7 @@ private:
     tracked_vertices[0][0] = 0.0*this->parameters.scale;
     tracked_vertices[0][1] = 0.0*this->parameters.scale;
     tracked_vertices[0][2] = 0.0*this->parameters.scale;
-      
+
     tracked_vertices[1][0] = 0.0*this->parameters.scale;
     tracked_vertices[1][1] = 0.0*this->parameters.scale;
     tracked_vertices[1][2] = this->parameters.joint_radius
@@ -6278,7 +6253,7 @@ private:
                          ZeroFunction<dim>(this->n_components),
                          constraints,
                          this->fe.component_mask(this->z_displacement) );
-      
+
       // Symmetry plane
       VectorTools::interpolate_boundary_values
                         (this->dof_handler_ref,
@@ -6286,7 +6261,7 @@ private:
                          ZeroFunction<dim>(this->n_components),
                          constraints,
                          this->fe.component_mask(this->x_displacement) );
-      
+
        Point<dim> fix_node(0.0, 0.0,((this->parameters.joint_radius)
                                       -(this->parameters.joint_length))
                                     *this->parameters.scale              );
@@ -6384,36 +6359,23 @@ private:
                                       *(numbers::PI)/180.;
          const double radius_phi_load_max = (this->parameters.radius_phi_max)
                                       *(numbers::PI)/180.;
-         //Angular width in polar direction of loading (radius)
-         const double radius_d_phi_load  = (this->parameters.radius_phi_width)
-                                      *(numbers::PI)/180.;
 
          //Min and max azimuthal angles of center of loading position (radius)
          const double radius_theta_load_min = (this->parameters.radius_theta_min)
                                         *(numbers::PI)/180.;
          const double radius_theta_load_max = (this->parameters.radius_theta_max)
                                         *(numbers::PI)/180.;
-         //Angular width in azimuthal direction of loading (radius)
-         const double radius_d_theta_load  = (this->parameters.radius_theta_width)
-                                        *(numbers::PI)/180.;
-
          // ULNA
          //Min and max polar angles of center of loading position (ulna)
          const double ulna_phi_load_min = (this->parameters.ulna_phi_min)
                                       *(numbers::PI)/180.;
          const double ulna_phi_load_max = (this->parameters.ulna_phi_max)
                                       *(numbers::PI)/180.;
-         //Angular width in polar direction of loading (ulna)
-         const double ulna_d_phi_load  = (this->parameters.ulna_phi_width)
-                                     *(numbers::PI)/180.;
 
          //Min and max azimuthal angles of center of loading position (radius)
          const double ulna_theta_load_min = (this->parameters.ulna_theta_min)
                                         *(numbers::PI)/180.;
          const double ulna_theta_load_max = (this->parameters.ulna_theta_max)
-                                        *(numbers::PI)/180.;
-         //Angular width in azimuthal direction of loading (radius)
-         const double ulna_d_theta_load  = (this->parameters.ulna_theta_width)
                                         *(numbers::PI)/180.;
 
          const unsigned int num_cycles = this->parameters.num_cycles;
@@ -6443,15 +6405,15 @@ private:
 
            const JointLoadingPattern<dim>
            radius_loading_pattern( current_radius_phi_load,
-                                   radius_d_phi_load,
                                    current_radius_theta_load,
-                                   radius_d_theta_load         );
+                                   this->parameters.radius_area_r,
+                                   this->parameters.joint_radius);
            const JointLoadingPattern<dim>
            ulna_loading_pattern( current_ulna_phi_load,
-                                 ulna_d_phi_load,
                                  current_ulna_theta_load,
-                                 ulna_d_theta_load        );
-             
+                                 this->parameters.ulna_area_r,
+                                 this->parameters.joint_radius);
+
            load_vector = ( radius_loading_pattern.value({pt[0],pt[1],pt[2]})
                           + ulna_loading_pattern.value({pt[0],pt[1],pt[2]}) )
                          * (this->parameters.load) * N;

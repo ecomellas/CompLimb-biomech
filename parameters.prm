@@ -32,8 +32,8 @@ set Grid scale          = 1.0
 #  Type of loading: pressure | displacement | none
 set Load type           = pressure
 
-# Value of loading [Pa] for pressure and [mm] for displacements
-set Load value          = -1850
+# Value of loading [Pa] for pressure and [mm] for displacements 
+set Load value          = -300e3
 
 # Value of the prescribed fluid flow [mm/s], Q* = w*·N should include + or - sign.
 set Fluid flow value    = 0
@@ -47,24 +47,27 @@ set Drained pressure    = 0
 set Joint length = 0.70
 set Joint radius = 0.20
 
-# Polar angle range and angle width of contact area, all angles given in degrees
-# 0 deg coincides with positive z-axis direction and corresponds to top of spherical cap
-# 50 deg & 23 deg (radius/ulna) +/- 20 deg
+# Polar (phi) and azimuthal (theta) angle range of contact area for radius.
+# All angles given in degrees. For polar angle, 0 deg coincides with 
+# positive z-axis direction and corresponds to top of spherical cap.
+# For azimuthal angle, 0 deg coincides with positive x-axis direction.
+# 50 deg +/- 20 deg
 set Radius phi min   = 30
 set Radius phi max   = 70
-set Radius phi width = 10
-set Ulna phi min     = 43
-set Ulna phi max     = 3
-set Ulna phi width   = 6
-
-# Azimuthal angle range and angle width of contact area, all angles given in degrees
-# 0 deg coincides with positive x-axis direction
 set Radius theta min   = 90
 set Radius theta max   = 90
-set Radius theta width = 10
+set Radius area radius  = 0.04
+
+# Polar (phi) and azimuthal (theta) angle range of contact area for ulna
+# All angles given in degrees. For polar angle, 0 deg coincides with 
+# positive z-axis direction and corresponds to top of spherical cap.
+# For azimuthal angle, 0 deg coincides with positive x-axis direction.
+# 23 deg +/- 20 deg
+set Ulna phi min     = 43
+set Ulna phi max     = 3
 set Ulna theta min     = 270
 set Ulna theta max     = 270
-set Ulna theta width   = 6
+set Ulna area radius  = 0.03
 
 # Number of loading cycles.  Each cycle follows min-max-min angles in sinusoidal form.
 set Number of cycles = 1
@@ -83,11 +86,13 @@ subsection Material properties
 set material        = Neo-Hooke
 
 # First Lame parameter [Pa] (for extension function related to compactation point)
-set lambda          = 18.0e6
+#98.0e6
+set lambda          = 18.0e6 
 
 # ===== Neo-Hooke only =====
 
 # Shear modulus [Pa] (Second Lame parameter)  -- Neo-Hooke
+#2.0e6
 set shear modulus  =  3.7e5
 
 # ===== Ogden  + Visco-Ogden only =====
@@ -156,19 +161,20 @@ set growth exponential mech = 1.0
 # ===== Joint growth only =====
 
 # Biological growth rate
-set growth rate bio = 5.0e-3
+set growth rate bio = 1.5e-3
 
 # Polynomial coefficient order 0
-set growth bio coeff 0 = 0.37
+set growth bio coeff 0 = 0.49
 
 # Polynomial coefficient order 1
-set growth bio coeff 1 = -2.09
+set growth bio coeff 1 = -3.14
 
 # Polynomial coefficient order 2
-set growth bio coeff 2 = 6.98
+set growth bio coeff 2 = 9.91
 
 # Polynomial coefficient order 3
-set growth bio coeff 3 = -4.70
+set growth bio coeff 3 = -6.65
+
 
 # ------------------------ FLUID ----------------------------------
 
@@ -187,7 +193,9 @@ set kappa                            = 1
 
 # Initial intrinsic permeability parameter of the solid (isotropic permeability) [mm²]
 # To be used with Markert formulation of deformation-dependent intrinsic permeability
+#1.12e-10
 set initial intrinsic permeability   = 1.0e-8
+
 
 # Effective shear viscosity parameter of the fluid [Pa·s = 1e-6·N·s/mm³]
 # To be used with Markert formulation of deformation-dependent intrinsic permeability
@@ -225,7 +233,7 @@ end
 
 subsection Nonlinear solver
 # Number of Newton-Raphson iterations allowed
-set Max iterations Newton-Raphson = 50
+set Max iterations Newton-Raphson = 60
 
 # Force residual tolerance
 set Tolerance force               = 1.0e-6
