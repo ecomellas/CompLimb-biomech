@@ -86,14 +86,12 @@ subsection Material properties
 set material        = Neo-Hooke
 
 # First Lame parameter [Pa] (for extension function related to compactation point)
-#98.0e6
-set lambda          = 18.0e6 
+set lambda          = 98.0e6 
 
 # ===== Neo-Hooke only =====
 
 # Shear modulus [Pa] (Second Lame parameter)  -- Neo-Hooke
-#2.0e6
-set shear modulus  =  3.7e5
+set shear modulus  =  2.0e6
 
 # ===== Ogden  + Visco-Ogden only =====
 
@@ -193,8 +191,7 @@ set kappa                            = 1
 
 # Initial intrinsic permeability parameter of the solid (isotropic permeability) [mm²]
 # To be used with Markert formulation of deformation-dependent intrinsic permeability
-#1.12e-10
-set initial intrinsic permeability   = 1.0e-8
+set initial intrinsic permeability   = 1.12e-6
 
 
 # Effective shear viscosity parameter of the fluid [Pa·s = 1e-6·N·s/mm³]
