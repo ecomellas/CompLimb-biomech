@@ -1,270 +1,271 @@
 #
-# Listing of Parameters
-# ---------------------
-
-
-subsection Finite element system
-# Displacement system polynomial order
-set Polynomial degree displ = 2
-
-# Pore pressure system polynomial order
-set Polynomial degree pore  = 1
-
-# Gauss quadrature points per space dimension, exact for polynomials of degree 2n-1
-# (should be at least an order higher than the polynomial order)
-set Quadrature points       = 3
-end
-
-
-subsection Geometry
-# Type of geometry:  growing_muffin | trapped_turtle
-#                  | cube_growth_confined_drained | cube_growth_confined_undrained
-#                  | cube_growth_unconfined_drained | cube_growth_unconfined_undrained
-#                  | idealised_humerus | idealised_humerus_reduced
-set Geometry type       = idealised_humerus
-
-# Global refinement level (higher value means finer mesh)
-set Global refinement   = 2
-
-# Global grid scaling factor (scales geometry size)
-set Grid scale          = 1.0
-
-#  Type of loading: pressure | displacement | none
-set Load type           = pressure
-
-# Value of loading [Pa] for pressure and [mm] for displacements 
-set Load value          = -300e3
-
-# Value of the prescribed fluid flow [mm/s], Q* = w*·N should include + or - sign.
-set Fluid flow value    = 0
-
-# Increase of pressure at drained boundary [Pa] w.r.t. atmospheric pressure
-set Drained pressure    = 0
-
-# ===== idealised_half_joint only =====
-
-# Joint rudiment dimensions [mm] (this will be multiplied by grid scale above)
-set Joint length = 0.70
-set Joint radius = 0.20
-
-# Polar (phi) and azimuthal (theta) angle range of contact area for radius.
-# All angles given in degrees. For polar angle, 0 deg coincides with 
-# positive z-axis direction and corresponds to top of spherical cap.
-# For azimuthal angle, 0 deg coincides with positive x-axis direction.
-# 50 deg +/- 20 deg
-set Radius phi min   = 30
-set Radius phi max   = 70
-set Radius theta min   = 90
-set Radius theta max   = 90
-set Radius area radius  = 0.04
-
-# Polar (phi) and azimuthal (theta) angle range of contact area for ulna
-# All angles given in degrees. For polar angle, 0 deg coincides with 
-# positive z-axis direction and corresponds to top of spherical cap.
-# For azimuthal angle, 0 deg coincides with positive x-axis direction.
-# 23 deg +/- 20 deg
-set Ulna phi min     = 43
-set Ulna phi max     = 3
-set Ulna theta min     = 270
-set Ulna theta max     = 270
-set Ulna area radius  = 0.03
-
-# Number of loading cycles.  Each cycle follows min-max-min angles in sinusoidal form.
-set Number of cycles = 1
-
-# Number of time steps at the end of the simulation without load.
-set Number of no-load time steps = 1
-
-end
-
-
-subsection Material properties
-
-# ------------------------ SOLID ----------------------------------
-
-# Type of material:  Neo-Hooke, Ogden or visco-Ogden
-set material        = Neo-Hooke
-
-# First Lame parameter [Pa] (for extension function related to compactation point)
-set lambda          = 98.0e6 
-
-# ===== Neo-Hooke only =====
-
-# Shear modulus [Pa] (Second Lame parameter)  -- Neo-Hooke
-set shear modulus  =  2.0e6
-
-# ===== Ogden  + Visco-Ogden only =====
-
-# Type of eigen solver for Ogden models: QL Implicit Shifts | Jacobi
-set eigen solver    = QL Implicit Shifts
-
-# Shear modulus mu1  [Pa]
-set mu1             = -16.88
-
-# Shear modulus mu2  [Pa]
-set mu2             = 0.0
-
-# Shear modulus mu3  [Pa]
-set mu3             = 0.0
-
-# Stiffening parameter alpha 1  [-]
-set alpha1          = -29.62
-
-# Stiffening parameter alpha 2  [-]
-set alpha2          = 1.0
-
-# Stiffening parameter alpha 3  [-]
-set alpha3          = 1.0
-
-# ===== Visco-Ogden only =====
-
-# Shear modulus mu1  [Pa]
-set mu1_1           = -724.8
-
-# Shear modulus mu2  [Pa]
-set mu2_1             = 0.0
-
-# Shear modulus mu3  [Pa]
-set mu3_1             = 0.0
-
-# Stiffening parameter alpha 1  [-]
-set alpha1_1          = -25.11
-
-# Stiffening parameter alpha 2  [-]
-set alpha2_1          = 1.0
-
-# Stiffening parameter alpha 3  [-]
-set alpha3_1          = 1.0
-
-# Deformation-independent viscosity parameter [Pa·s]
-set viscosity_1       = 3870
-
-
-# Type of continuum growth: none | morphogen | pressure | joint-pressure | joint-div-vel
-set growth               = joint-pressure
-
-# ===== Morphogenetic growth only =====
-
-# Morphogenetic growth increment per timestep
-set growth incr          = 0.01
-
-# ===== Pressure-driven or joint growth only =====
-
-# Mechanical growth rate
-set growth rate mech = 1.5e-3
-
-# Nature of the dependency of growth on the mechanical stimuli (linear, quadratic, etc.)
-set growth exponential mech = 1.0
-
-# ===== Joint growth only =====
-
-# Biological growth rate
-set growth rate bio = 1.5e-3
-
-# Polynomial coefficient order 0
-set growth bio coeff 0 = 0.49
-
-# Polynomial coefficient order 1
-set growth bio coeff 1 = -3.14
-
-# Polynomial coefficient order 2
-set growth bio coeff 2 = 9.91
-
-# Polynomial coefficient order 3
-set growth bio coeff 3 = -6.65
-
-
-# ------------------------ FLUID ----------------------------------
-
-# Choose between Markert formulation of deformation-dependent intrinsic permeability (Markert)
-# and Ehlers formulation of deformation-dependent Darcy flow coefficient (Ehlers)
-# to define the seepage velocity
-set seepage definition = Markert
-
-# Initial porosity (solid volume fraction)
-set initial solid volume fraction    = 0.75
-
-# Deformation-dependency control parameter for specific permeability [kappa >= 0]
-set kappa                            = 1
-
-# ===== Markert only =====
-
-# Initial intrinsic permeability parameter of the solid (isotropic permeability) [mm²]
-# To be used with Markert formulation of deformation-dependent intrinsic permeability
-set initial intrinsic permeability   = 1.12e-6
-
-
-# Effective shear viscosity parameter of the fluid [Pa·s = 1e-6·N·s/mm³]
-# To be used with Markert formulation of deformation-dependent intrinsic permeability
-set fluid viscosity                  = 0.89e-3
-
-# ===== Ehlers only =====
-
-# Initial Darcy flow coefficient [mm/s]
-# To be used with Ehlers formulation of deformation-dependent Darcy flow coefficient
-set initial Darcy coefficient   = 2.42e-7
-
-# Effective weight of fluid [1e-6·N/mm³]
-# To be used with Ehlers formulation of deformation-dependent Darcy flow coefficient
-set fluid weight                = 9.777
-
-# ------------------------ GRAVITY ----------------------------------
-
-# Gravity term considered (true) or neglected (false)
-set gravity term      = false
-
-# ===== gravity true only =====
-
-# If gravity term is considered, define the (real or effective) density of the fluid [g/mm³]
-set fluid density     = 0.997e-3
-
-# If gravity term is considered, define the (real or effective) density of the solid [g/mm³]
-set solid density     = 0.997e-3
-
-# If gravity term is considered, define the direction of gravity (unit vector 0 for x, 1 for y, 2 for z)
-set gravity direction = 2
-
-# If gravity term is considered, define the value of gravity ("minus" indicates negative sense of direction) [mm/s²]
-set gravity value     = -9810
-end
-
-subsection Nonlinear solver
-# Number of Newton-Raphson iterations allowed
-set Max iterations Newton-Raphson = 60
-
-# Force residual tolerance
-set Tolerance force               = 1.0e-6
-
-# Displacement error tolerance
-set Tolerance displacement        = 1.0e-6
-
-# Pore pressure error tolerance
-set Tolerance pore pressure       = 1.0e-6
-
-end
-
-
-subsection Time
-# End time [s]
-set End time            = 11.0e-4
-
-# Time step size [s]
-set Time step size      =  1.0e-4
-end
-
-
-subsection Output parameters
-# Paraview output files to generate: none | bcs | solution | all
-set Output files               = all
-
-# Output data every given time step number for Paraview output files ("bcs" and "solution")
-set Time step number output    = 1
-
-# Order of elements for Paraview output files ("bcs" and "solution").
-# Introduce 0 to use same as displacement polynomial.
-set Output element order       = 0
-
-# For "solution" file output data associated with integration point values averaged on:  elements | nodes
-set Averaged results           = nodes
-end
-         
+ # Listing of Parameters
+ # ---------------------
+ 
+ 
+ subsection Finite element system
+ # Displacement system polynomial order
+ set Polynomial degree displ = 2
+ 
+ # Pore pressure system polynomial order
+ set Polynomial degree pore  = 1
+ 
+ # Gauss quadrature points per space dimension, exact for polynomials of degree 2n-1
+ # (should be at least an order higher than the polynomial order)
+ set Quadrature points       = 3
+ end
+ 
+ 
+ subsection Geometry
+ # Type of geometry:  growing_muffin | trapped_turtle
+ #                  | cube_growth_confined_drained | cube_growth_confined_undrained
+ #                  | cube_growth_unconfined_drained | cube_growth_unconfined_undrained
+ #                  | idealised_humerus | idealised_humerus_reduced
+ set Geometry type       = idealised_humerus
+ 
+ # Global refinement level (higher value means finer mesh)
+ set Global refinement   = 2
+ 
+ # Global grid scaling factor (scales geometry size)
+ set Grid scale          = 1.0
+ 
+ #  Type of loading: pressure | displacement | none
+ set Load type           = pressure
+ 
+ # Value of loading [Pa] for pressure and [mm] for displacements 
+ set Load value          = -300e3
+ 
+ # Value of the prescribed fluid flow [mm/s], Q* = w*·N should include + or - sign.
+ set Fluid flow value    = 0
+ 
+ # Increase of pressure at drained boundary [Pa] w.r.t. atmospheric pressure
+ set Drained pressure    = 0
+ 
+ # ===== idealised_half_joint only =====
+ 
+ # Joint rudiment dimensions [mm] (this will be multiplied by grid scale above)
+ set Joint length = 0.70
+ set Joint radius = 0.20
+ 
+ # Polar (phi) and azimuthal (theta) angle range of contact area for radius.
+ # All angles given in degrees. For polar angle, 0 deg coincides with 
+ # positive z-axis direction and corresponds to top of spherical cap.
+ # For azimuthal angle, 0 deg coincides with positive x-axis direction.
+ # 50 deg +/- 20 deg
+ set Radius phi min   = 40
+ set Radius phi max   = 60
+ set Radius theta min   = 90
+ set Radius theta max   = 90
+ set Radius area radius  = 0.04
+ 
+ # Polar (phi) and azimuthal (theta) angle range of contact area for ulna
+ # All angles given in degrees. For polar angle, 0 deg coincides with 
+ # positive z-axis direction and corresponds to top of spherical cap.
+ # For azimuthal angle, 0 deg coincides with positive x-axis direction.
+ # 23 deg +/- 20 deg
+ set Ulna phi min   = 33
+ set Ulna phi max   = 13
+ set Ulna theta min     = 270
+ set Ulna theta max     = 270
+ set Ulna area radius  = 0.03
+ 
+ # Number of loading cycles.  Each cycle follows min-max-min angles in sinusoidal form.
+ set Number of cycles = 1
+ 
+ # Number of time steps at the end of the simulation without load.
+ set Number of no-load time steps = 1
+ 
+ end
+ 
+ 
+ subsection Material properties
+ 
+ # ------------------------ SOLID ----------------------------------
+ 
+ # Type of material:  Neo-Hooke, Ogden or visco-Ogden
+ set material        = Neo-Hooke
+ 
+ # First Lame parameter [Pa] (for extension function related to compactation point)
+ set lambda          = 98.0e6 
+ 
+ # ===== Neo-Hooke only =====
+ 
+ # Shear modulus [Pa] (Second Lame parameter)  -- Neo-Hooke
+ set shear modulus  =  2.0e6
+ 
+ # ===== Ogden  + Visco-Ogden only =====
+ 
+ # Type of eigen solver for Ogden models: QL Implicit Shifts | Jacobi
+ set eigen solver    = QL Implicit Shifts
+ 
+ # Shear modulus mu1  [Pa]
+ set mu1             = -16.88
+ 
+ # Shear modulus mu2  [Pa]
+ set mu2             = 0.0
+ 
+ # Shear modulus mu3  [Pa]
+ set mu3             = 0.0
+ 
+ # Stiffening parameter alpha 1  [-]
+ set alpha1          = -29.62
+ 
+ # Stiffening parameter alpha 2  [-]
+ set alpha2          = 1.0
+ 
+ # Stiffening parameter alpha 3  [-]
+ set alpha3          = 1.0
+ 
+ # ===== Visco-Ogden only =====
+ 
+ # Shear modulus mu1  [Pa]
+ set mu1_1           = -724.8
+ 
+ # Shear modulus mu2  [Pa]
+ set mu2_1             = 0.0
+ 
+ # Shear modulus mu3  [Pa]
+ set mu3_1             = 0.0
+ 
+ # Stiffening parameter alpha 1  [-]
+ set alpha1_1          = -25.11
+ 
+ # Stiffening parameter alpha 2  [-]
+ set alpha2_1          = 1.0
+ 
+ # Stiffening parameter alpha 3  [-]
+ set alpha3_1          = 1.0
+ 
+ # Deformation-independent viscosity parameter [Pa·s]
+ set viscosity_1       = 3870
+ 
+ 
+ # Type of continuum growth: none | morphogen | pressure | joint-pressure | joint-div-vel
+ set growth               = joint-pressure
+ 
+ # ===== Morphogenetic growth only =====
+ 
+ # Morphogenetic growth increment per timestep
+ set growth incr          = 0.01
+ 
+ # ===== Pressure-driven or joint growth only =====
+ 
+ # Mechanical growth rate
+ set growth rate mech = 1.0e-2
+ 
+ # Nature of the dependency of growth on the mechanical stimuli (linear, quadratic, etc.)
+ set growth exponential mech = 1.0
+ 
+ # ===== Joint growth only =====
+ 
+ # Biological growth rate
+ set growth rate bio = 1.0e-3
+ 
+ # Polynomial coefficient order 0
+ set growth bio coeff 0 = 0.49
+ 
+ # Polynomial coefficient order 1
+ set growth bio coeff 1 = -3.14
+ 
+ # Polynomial coefficient order 2
+ set growth bio coeff 2 = 9.91
+ 
+ # Polynomial coefficient order 3
+ set growth bio coeff 3 = -6.65
+ 
+ 
+ # ------------------------ FLUID ----------------------------------
+ 
+ # Choose between Markert formulation of deformation-dependent intrinsic permeability (Markert)
+ # and Ehlers formulation of deformation-dependent Darcy flow coefficient (Ehlers)
+ # to define the seepage velocity
+ set seepage definition = Markert
+ 
+ # Initial porosity (solid volume fraction)
+ set initial solid volume fraction    = 0.17
+ 
+ # Deformation-dependency control parameter for specific permeability [kappa >= 0]
+ set kappa                            = 1
+ 
+ # ===== Markert only =====
+ 
+ # Initial intrinsic permeability parameter of the solid (isotropic permeability) [mm²]
+ # To be used with Markert formulation of deformation-dependent intrinsic permeability
+ set initial intrinsic permeability   = 1.12e-6
+ 
+ 
+ # Effective shear viscosity parameter of the fluid [Pa·s = 1e-6·N·s/mm³]
+ # To be used with Markert formulation of deformation-dependent intrinsic permeability
+ set fluid viscosity                  = 0.89e-3
+ 
+ # ===== Ehlers only =====
+ 
+ # Initial Darcy flow coefficient [mm/s]
+ # To be used with Ehlers formulation of deformation-dependent Darcy flow coefficient
+ set initial Darcy coefficient   = 2.42e-7
+ 
+ # Effective weight of fluid [1e-6·N/mm³]
+ # To be used with Ehlers formulation of deformation-dependent Darcy flow coefficient
+ set fluid weight                = 9.777
+ 
+ # ------------------------ GRAVITY ----------------------------------
+ 
+ # Gravity term considered (true) or neglected (false)
+ set gravity term      = false
+ 
+ # ===== gravity true only =====
+ 
+ # If gravity term is considered, define the (real or effective) density of the fluid [g/mm³]
+ set fluid density     = 0.997e-3
+ 
+ # If gravity term is considered, define the (real or effective) density of the solid [g/mm³]
+ set solid density     = 0.997e-3
+ 
+ # If gravity term is considered, define the direction of gravity (unit vector 0 for x, 1 for y, 2 for z)
+ set gravity direction = 2
+ 
+ # If gravity term is considered, define the value of gravity ("minus" indicates negative sense of direction) [mm/s²]
+ set gravity value     = -9810
+ end
+ 
+ subsection Nonlinear solver
+ # Number of Newton-Raphson iterations allowed
+ set Max iterations Newton-Raphson = 20
+ 
+ # Force residual tolerance
+ set Tolerance force               = 1.0e-6
+ 
+ # Displacement error tolerance
+ set Tolerance displacement        = 1.0e-6
+ 
+ # Pore pressure error tolerance
+ set Tolerance pore pressure       = 1.0e-6
+ 
+ end
+ 
+ 
+ subsection Time
+ # End time [s]
+ set End time            = 11.0e-4
+ 
+ # Time step size [s]
+ set Time step size      = 1.0e-4
+ end
+ 
+ 
+ subsection Output parameters
+ # Paraview output files to generate: none | bcs | solution | all
+ set Output files               = all
+ 
+ # Output data every given time step number for Paraview output files ("bcs" and "solution")
+ set Time step number output    = 1
+ 
+ # Order of elements for Paraview output files ("bcs" and "solution").
+ # Introduce 0 to use same as displacement polynomial.
+ set Output element order       = 0
+ 
+ # For "solution" file output data associated with integration point values averaged on:  elements | nodes
+ set Averaged results           = nodes
+ end
+          
+ 

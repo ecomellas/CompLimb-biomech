@@ -967,6 +967,7 @@ class Material_Hyperelastic
           growth_bio_coeff_3(parameters.growth_bio_coeff_3),
           joint_length(parameters.joint_length),
           joint_radius(parameters.joint_radius),
+          joint_num_no_load_timesteps(parameters.num_no_load_time_steps),
           time(time),
           growth_stretch(1.0),
           growth_stretch_converged(1.0),
@@ -1079,6 +1080,7 @@ class Material_Hyperelastic
     const double growth_bio_coeff_3;
     const double joint_length;
     const double joint_radius;
+    const unsigned int joint_num_no_load_timesteps;
     const Time  &time;
 
     //Internal variables
@@ -1117,39 +1119,61 @@ class Material_Hyperelastic
         //Growth driven by pressure in joint
         else if (growth_type == "joint-pressure")
         {
-            //Biological part
-            const double chi = (pt[dim-1] + joint_length - joint_radius)/
-                               joint_length;
-            growth_criterion = growth_rate_bio
-                                *(growth_bio_coeff_0 +
-                                  growth_bio_coeff_1*chi +
-                                  growth_bio_coeff_2*chi*chi +
-                                  growth_bio_coeff_3*chi*chi*chi);
+            const double current_time = time.get_current();
+            const double dt = time.get_delta_t();
+            const double end_load_time = dt*joint_num_no_load_timesteps;
+            const double final_load_time = time.get_end() - end_load_time;
+            
+            // No growth for first load step and no-load steps at end.
+            if ((current_time <= dt) || (current_time > final_load_time))
+                growth_criterion=0.0;
+            else
+            {
+                //Biological part
+                const double chi = (pt[dim-1] + joint_length - joint_radius)/
+                                   joint_length;
+                growth_criterion = growth_rate_bio
+                                    *(growth_bio_coeff_0 +
+                                      growth_bio_coeff_1*chi +
+                                      growth_bio_coeff_2*chi*chi +
+                                      growth_bio_coeff_3*chi*chi*chi);
 
-            //Mechanical part
-            double tolerance = 1.0e-6;
-            if (mech_growth_stimulus > tolerance) //Growth only for compressive pressures
-              growth_criterion += growth_rate_mech*
-                              std::pow(mech_growth_stimulus, (1.0/growth_exponential_mech));
+                //Mechanical part
+                double tolerance = 1.0e-6;
+                if (mech_growth_stimulus > tolerance) //Growth only for compressive pressures
+                  growth_criterion += growth_rate_mech*
+                                  std::pow(mech_growth_stimulus, (1.0/growth_exponential_mech));
+            }
         }
         // Growth driven by divergence of the seepage velocity in joint
         // Exactly the same as above, but kept it separate, in case we need to change the function
         else if (growth_type == "joint-div-vel")
         {
-            //Biological part
-            const double chi = (pt[dim-1] + joint_length - joint_radius)/
-                               joint_length;
-            growth_criterion = growth_rate_bio
-                                *(growth_bio_coeff_0 +
-                                  growth_bio_coeff_1*chi +
-                                  growth_bio_coeff_2*chi*chi +
-                                  growth_bio_coeff_3*chi*chi*chi);
+            const double current_time = time.get_current();
+            const double dt = time.get_delta_t();
+            const double end_load_time = dt*joint_num_no_load_timesteps;
+            const double final_load_time = time.get_end() - end_load_time;
+            
+            // No growth for first load step and no-load steps at end.
+            if ((current_time <= dt) || (current_time > final_load_time))
+                growth_criterion=0.0;
+            else
+            {
+                //Biological part
+                const double chi = (pt[dim-1] + joint_length - joint_radius)/
+                                   joint_length;
+                growth_criterion = growth_rate_bio
+                                    *(growth_bio_coeff_0 +
+                                      growth_bio_coeff_1*chi +
+                                      growth_bio_coeff_2*chi*chi +
+                                      growth_bio_coeff_3*chi*chi*chi);
 
-            //Velocity-driven part
-            double tolerance = 1.0e-6;
-            if (mech_growth_stimulus > tolerance) //Growth only for positive divergences
-              growth_criterion += growth_rate_mech*
-                              std::pow(mech_growth_stimulus, (1.0/growth_exponential_mech));
+                //Velocity-driven part
+                double tolerance = 1.0e-6;
+                if (mech_growth_stimulus > tolerance) //Growth only for positive divergences
+                  growth_criterion += growth_rate_mech*
+                                  std::pow(mech_growth_stimulus, (1.0/growth_exponential_mech));
+            }
         }
         else
             AssertThrow(false, ExcMessage("Growth type not implemented yet."));
