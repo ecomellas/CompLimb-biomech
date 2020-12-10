@@ -20,9 +20,11 @@
  # Type of geometry:  growing_muffin | trapped_turtle
  #                  | cube_growth_confined_drained | cube_growth_confined_undrained
  #                  | cube_growth_unconfined_drained | cube_growth_unconfined_undrained
- #                  | idealised_humerus | idealised_humerus_reduced
- set Geometry type       = idealised_humerus
- 
+ #                  | idealised_humerus_partially_drained 
+ #                  | idealised_humerus_fully_drained
+ #                  | idealised_humerus_laterals_undrained
+ set Geometry type       = idealised_humerus_fully_drained
+
  # Global refinement level (higher value means finer mesh)
  set Global refinement   = 2
  
@@ -52,22 +54,22 @@
  # positive z-axis direction and corresponds to top of spherical cap.
  # For azimuthal angle, 0 deg coincides with positive x-axis direction.
  # 50 deg +/- 20 deg
- set Radius phi min   = 40
- set Radius phi max   = 60
- set Radius theta min   = 90
- set Radius theta max   = 90
- set Radius area radius  = 0.04
+ set Radius phi min   = 50
+ set Radius phi max   = 80
+ set Radius theta min = 270
+ set Radius theta max = 310
+ set Radius area radius = 0.04
  
  # Polar (phi) and azimuthal (theta) angle range of contact area for ulna
  # All angles given in degrees. For polar angle, 0 deg coincides with 
  # positive z-axis direction and corresponds to top of spherical cap.
  # For azimuthal angle, 0 deg coincides with positive x-axis direction.
  # 23 deg +/- 20 deg
- set Ulna phi min   = 33
- set Ulna phi max   = 13
- set Ulna theta min     = 270
- set Ulna theta max     = 270
- set Ulna area radius  = 0.03
+ set Ulna phi min   = 23
+ set Ulna phi max   = 60
+ set Ulna theta min = 90
+ set Ulna theta max = 30
+ set Ulna area radius = 0.03
  
  # Number of loading cycles.  Each cycle follows min-max-min angles in sinusoidal form.
  set Number of cycles = 1
@@ -246,10 +248,10 @@
  
  subsection Time
  # End time [s]
- set End time            = 11.0e-4
+ set End time            = 1.0
  
  # Time step size [s]
- set Time step size      = 1.0e-4
+ set Time step size      = 0.1
  end
  
  
