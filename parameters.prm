@@ -23,6 +23,9 @@
  #                  | idealised_humerus_partially_drained 
  #                  | idealised_humerus_fully_drained
  #                  | idealised_humerus_laterals_undrained
+ #                  | external_mesh_humerus_partially_drained
+ #                  | external_mesh_humerus_fully_drained
+ #                  | external_mesh_humerus_laterals_undrained
  set Geometry type       = idealised_humerus_fully_drained
 
  # Global refinement level (higher value means finer mesh)
@@ -43,9 +46,10 @@
  # Increase of pressure at drained boundary [Pa] w.r.t. atmospheric pressure
  set Drained pressure    = 0
  
- # ===== idealised_half_joint only =====
+ # ===== humerus geometries only =====
  
  # Joint rudiment dimensions [mm] (this will be multiplied by grid scale above)
+ # For external_mesh_humerus joint length is needed to set BCs correctly.
  set Joint length = 0.70
  set Joint radius = 0.20
  
@@ -71,6 +75,12 @@
  set Ulna theta max = 30
  set Ulna area radius = 0.03
  
+ # Reduction in value of loading (0:no reduction; 1:full reduction, i.e. no load at max angles). 
+ # Load intensity follows a max-min-max sinusoidal form, where minimum intensity of loading 
+ # corresponds to maximum angle. A negative value will result in increase, not reduction.
+ # Initial and final values of loading are "Load value" set above. 
+ set Load value reduction  = 0.8
+
  # Number of loading cycles.  Each cycle follows min-max-min angles in sinusoidal form.
  set Number of cycles = 1
  
@@ -248,7 +258,7 @@
  
  subsection Time
  # End time [s]
- set End time            = 1.0
+ set End time            = 1.1
  
  # Time step size [s]
  set Time step size      = 0.1

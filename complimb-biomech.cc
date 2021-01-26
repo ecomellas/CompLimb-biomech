@@ -192,6 +192,7 @@ namespace CompLimb
       double       ulna_phi_min;
       double       ulna_phi_max;
       double       ulna_area_r;
+      double       load_reduction;
       unsigned int num_cycles;
       unsigned int num_no_load_time_steps;
 
@@ -215,7 +216,10 @@ namespace CompLimb
                                                "|cube_unconfined_undrained"
                                                "|idealised_humerus_partially_drained"
                                                "|idealised_humerus_fully_drained"
-                                               "|idealised_humerus_laterals_undrained"),
+                                               "|idealised_humerus_laterals_undrained"
+                                               "|external_mesh_humerus_partially_drained"
+                                               "|external_mesh_humerus_fully_drained"
+                                               "|external_mesh_humerus_laterals_undrained"),
                               "Type of geometry used. ");
 
         prm.declare_entry("Global refinement", "1",
@@ -246,35 +250,36 @@ namespace CompLimb
 
         prm.declare_entry("Joint length", "1.75",
                            Patterns::Double(0,1e6),
-                           "Joint rudiment length, only for idealised_humerus.");
+                           "Joint rudiment length, only for humerus geometries."
+                           "For external_mesh_humerus indicate length to impose BCs properly.");
 
         prm.declare_entry("Joint radius", "0.5",
                            Patterns::Double(0,1e6),
-                           "Joint rudiment radius, only for idealised_humerus.");
+                           "Joint rudiment radius, only for humerus geometries.");
 
         prm.declare_entry("Radius phi min", "10.",
                           Patterns::Double(0,360),
                           "Initial polar angle (in degrees) of loading cycle "
                           "corresponding to the effect of the radius, "
-                          "only for idealised_humerus.");
+                          "only for humerus geometries.");
 
         prm.declare_entry("Radius phi max", "80.",
                           Patterns::Double(0,360),
                           "Final polar angle (in degrees) of loading cycle "
                           "corresponding to the effect of the radius, "
-                          "only for idealised_humerus.");
+                          "only for humerus geometries.");
 
           prm.declare_entry("Radius theta min", "90.",
                             Patterns::Double(0,360),
                            "Initial polar angle (in degrees) of loading cycle "
                            "corresponding to the effect of the radius, "
-                           "only for idealised_humerus.");
+                           "only for humerus geometries.");
 
           prm.declare_entry("Radius theta max", "90.",
                             Patterns::Double(0,360),
                             "Final polar angle (in degrees) of loading cycle "
                             "corresponding to the effect of the radius, "
-                            "only for idealised_humerus.");
+                            "only for humerus geometries.");
 
          prm.declare_entry("Radius area radius", "0.25",
                            Patterns::Double(0,1e6),
@@ -285,30 +290,36 @@ namespace CompLimb
                            Patterns::Double(0,360),
                            "Initial polar angle (in degrees) of loading cycle "
                            "corresponding to the effect of the ulna, "
-                           "only for idealised_humerus.");
+                           "only for humerus geometries.");
 
          prm.declare_entry("Ulna phi max", "0.",
                            Patterns::Double(0,360),
                            "Final polar angle (in degrees) of loading cycle "
                            "corresponding to the effect of the ulna, "
-                           "only for idealised_humerus.");
+                           "only for humerus geometries.");
 
           prm.declare_entry("Ulna theta min", "90.",
                             Patterns::Double(0,360),
                            "Initial polar angle (in degrees) of loading cycle "
                            "corresponding to the effect of the ulna, "
-                           "only for idealised_humerus.");
+                           "only for humerus geometries.");
 
           prm.declare_entry("Ulna theta max", "90.",
                             Patterns::Double(0,360),
                             "Final polar angle (in degrees) of loading cycle "
                             "corresponding to the effect of the ulna, "
-                            "only for idealised_humerus.");
+                            "only for humerus geometries.");
 
           prm.declare_entry("Ulna area radius", "0.1",
                             Patterns::Double(0,1e6),
                             "Radius of load contact area corresponding to "
-                            "the effect of the ulna, only for idealised_humerus.");
+                            "the effect of the ulna, only for humerus geometries.");
+          
+          prm.declare_entry("Load value reduction", "0.0",
+                            Patterns::Double(-1,1),
+                            "Reduction in value of loading (0:no reduction; "
+                            "1:full reduction, i.e. no load at max angles), "
+                            "only for humerus geometries. ");
 
          prm.declare_entry("Number of cycles", "1",
                            Patterns::Integer(1,1e6),
@@ -346,6 +357,7 @@ namespace CompLimb
         ulna_theta_min = prm.get_double("Ulna theta min");
         ulna_theta_max = prm.get_double("Ulna theta max");
         ulna_area_r = prm.get_double("Ulna area radius");
+        load_reduction = prm.get_double("Load value reduction");
         num_cycles = prm.get_integer("Number of cycles");
         num_no_load_time_steps = prm.get_integer("Number of no-load time steps");
       }
@@ -1757,11 +1769,12 @@ class Material_Darcy_Fluid
                      = transpose(Tensor<2,dim,double>(initial_intrinsic_permeability*I));
         const Tensor<2,dim,NumberType> instrinsic_permeability_tensor_T
                      = transpose(get_instrinsic_permeability_current(F));
-        const NumberType numerator = NumberType (std::pow( (det_F - n_OS), (kappa_darcy - 1.0)));
-        const NumberType denominator = NumberType (std::pow( (1 - n_OS), kappa_darcy));
-        const Tensor<1,dim,NumberType> func_grad_det_F
-                     = (kappa_darcy * numerator / denominator) * grad_det_F;
-
+        const NumberType numerator = NumberType(std::pow( (det_F - n_OS), (kappa_darcy - 1.0)));
+        const NumberType denominator = NumberType(std::pow( (1.0 - n_OS), kappa_darcy));
+        const NumberType constvalue = kappa_darcy * numerator / denominator;
+        const Tensor<1,dim,NumberType> func_grad_det_F = constvalue * grad_det_F;
+        
+        
         // Double contraction following Holzapfel notation, i.e.  A:B = A_ij B_ij
         NumberType div_seepage_vel = NumberType(
             (grad_p_fluid - get_body_force_FR_current())
@@ -5817,45 +5830,6 @@ public:
     {
       if ( (boundary_id == 1) || (boundary_id == 2) )
       {
-           // RADIUS
-           //Min and max polar angles of center of loading position (radius) in radians
-           const double radius_phi_min_rad = (this->parameters.radius_phi_min)
-                                             *(numbers::PI)/180.;
-           const double radius_phi_max_rad = (this->parameters.radius_phi_max)
-                                             *(numbers::PI)/180.;
-
-           //Min and max azimuthal angles of center of loading position (radius) in radians
-           const double radius_theta_min_rad = (this->parameters.radius_theta_min)
-                                               *(numbers::PI)/180.;
-           const double radius_theta_max_rad = (this->parameters.radius_theta_max)
-                                               *(numbers::PI)/180.;
-
-           // ULNA
-           //Min and max polar angles of center of loading position (ulna) in radians
-           const double ulna_phi_min_rad = (this->parameters.ulna_phi_min)
-                                        *(numbers::PI)/180.;
-           const double ulna_phi_max_rad = (this->parameters.ulna_phi_max)
-                                        *(numbers::PI)/180.;
-
-           //Min and max azimuthal angles of center of loading position (radius) in radians
-           const double ulna_theta_min_rad = (this->parameters.ulna_theta_min)
-                                          *(numbers::PI)/180.;
-           const double ulna_theta_max_rad = (this->parameters.ulna_theta_max)
-                                          *(numbers::PI)/180.;
-
-            // Compute maximum distance (grand circle distance)
-            // between max and min loading positions
-            const double max_distance_radius =
-                    GreatCircleDistance(this->parameters.joint_radius,
-                    radius_theta_min_rad, radius_phi_min_rad,
-                    radius_theta_max_rad, radius_phi_max_rad);
-
-            const double max_distance_ulna =
-                    GreatCircleDistance(this->parameters.joint_radius,
-                    ulna_theta_min_rad, ulna_phi_min_rad,
-                    ulna_theta_max_rad, ulna_phi_max_rad);
-
-           const unsigned int num_cycles = this->parameters.num_cycles;
            const double current_time = this->time.get_current();
            const double end_load_time = (this->time.get_delta_t())*
                                   (this->parameters.num_no_load_time_steps);
@@ -5863,9 +5837,49 @@ public:
 
            if (current_time <= final_load_time)
            {
-             // Sinusoidal change between max and min positions of
+             // Sinusoidal change between min and max positions of
              // loading trajectory. Loading trajectory computed as shortest
              // dist (great circle) between min and max positions.
+               
+                // RADIUS
+                // Min and max polar angles of center of loading position (radius) in radians
+                const double radius_phi_min_rad = (this->parameters.radius_phi_min)
+                                                  *(numbers::PI)/180.;
+                const double radius_phi_max_rad = (this->parameters.radius_phi_max)
+                                                  *(numbers::PI)/180.;
+
+                // Min and max azimuthal angles of center of loading position (radius) in radians
+                const double radius_theta_min_rad = (this->parameters.radius_theta_min)
+                                                    *(numbers::PI)/180.;
+                const double radius_theta_max_rad = (this->parameters.radius_theta_max)
+                                                    *(numbers::PI)/180.;
+
+                // ULNA
+                // Min and max polar angles of center of loading position (ulna) in radians
+                const double ulna_phi_min_rad = (this->parameters.ulna_phi_min)
+                                             *(numbers::PI)/180.;
+                const double ulna_phi_max_rad = (this->parameters.ulna_phi_max)
+                                             *(numbers::PI)/180.;
+
+                // Min and max azimuthal angles of center of loading position (radius) in radians
+                const double ulna_theta_min_rad = (this->parameters.ulna_theta_min)
+                                               *(numbers::PI)/180.;
+                const double ulna_theta_max_rad = (this->parameters.ulna_theta_max)
+                                               *(numbers::PI)/180.;
+
+                // Compute maximum distance (grand circle distance)
+                // between max and min loading positions
+                const double max_distance_radius =
+                         GreatCircleDistance(this->parameters.joint_radius,
+                         radius_theta_min_rad, radius_phi_min_rad,
+                         radius_theta_max_rad, radius_phi_max_rad);
+
+                const double max_distance_ulna =
+                         GreatCircleDistance(this->parameters.joint_radius,
+                         ulna_theta_min_rad, ulna_phi_min_rad,
+                         ulna_theta_max_rad, ulna_phi_max_rad);
+
+                const unsigned int num_cycles = this->parameters.num_cycles;
                
                // Compute current distance on great arc circle
                const double dist_points_radius = max_distance_radius
@@ -5876,7 +5890,7 @@ public:
                    *(1.0 - std::sin((numbers::PI)
                    *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
 
-               //(theta_point,phi_point);
+               // (theta_point,phi_point);
                const Point<2> current_radius_load =
                     PointOnGreatCircle(dist_points_radius,
                                        this->parameters.joint_radius,
@@ -5893,20 +5907,32 @@ public:
                                        ulna_theta_max_rad,
                                        ulna_phi_max_rad);
 
-             const JointLoadingPattern<dim>
-             radius_load_spatial_distribution( current_radius_load[0],
-                                               current_radius_load[1],
-                                               this->parameters.radius_area_r,
-                                               this->parameters.joint_radius  );
-             const JointLoadingPattern<dim>
-             ulna_load_spatial_distribution( current_ulna_load[0],
-                                             current_ulna_load[1],
-                                             this->parameters.ulna_area_r,
-                                             this->parameters.joint_radius  );
-
-             load_vector = ( radius_load_spatial_distribution.value({pt[0],pt[1],pt[2]})
-                            + ulna_load_spatial_distribution.value({pt[0],pt[1],pt[2]}) )
-                           * (this->parameters.load) * N;
+                const JointLoadingPattern<dim>
+                radius_load_spatial_distribution( current_radius_load[0],
+                                                  current_radius_load[1],
+                                                  this->parameters.radius_area_r,
+                                                  this->parameters.joint_radius  );
+                const JointLoadingPattern<dim>
+                ulna_load_spatial_distribution( current_ulna_load[0],
+                                                current_ulna_load[1],
+                                                this->parameters.ulna_area_r,
+                                                this->parameters.joint_radius  );
+               
+             // Load intensity reduced according to input factor.
+             // Sinusoidal change between max value at start position of loading trajectory,
+             // min value at max position, and max value at end position.
+               
+               
+                const double max_load_value = this->parameters.load;
+                const double min_load_value = max_load_value*(1.0 - this->parameters.load_reduction);
+               
+                double current_load_value = min_load_value + (max_load_value - min_load_value)*
+               (1.0 + std::cos((numbers::PI)*(2.0*num_cycles*current_time/final_load_time)))/2.0;
+               
+                // Compute load vector for given position.
+                load_vector = ( radius_load_spatial_distribution.value({pt[0],pt[1],pt[2]})
+                                + ulna_load_spatial_distribution.value({pt[0],pt[1],pt[2]}) )
+                              * current_load_value * N;
          }
       }
     }
@@ -6300,6 +6326,480 @@ make_dirichlet_constraints(AffineConstraints<double> &constraints)
              (this->fe.component_mask(this->pressure)));
   }
 };
+
+//@sect4{Base geometry of humerus meshed externally from an stl file for biomechanical tissue-level model.}
+template <int dim>
+  class ExternalMeshHumerusBase
+      : public Solid<dim>
+{
+public:
+    ExternalMeshHumerusBase (const Parameters::AllParameters &parameters)
+    : Solid<dim> (parameters)
+  {}
+
+  virtual ~ExternalMeshHumerusBase () {}
+
+  virtual Tensor<1,dim>
+  get_neumann_traction (const types::boundary_id &boundary_id,
+                        const Point<dim>         &pt,
+                        const Tensor<1,dim>      &N) const
+  {
+    Tensor<1,dim> load_vector;
+
+    if (this->parameters.load_type == "pressure")
+    {
+      if ( (boundary_id == 1) || (boundary_id == 2) )
+      {
+           // RADIUS
+           //Min and max polar angles of center of loading position (radius) in radians
+           const double radius_phi_min_rad = (this->parameters.radius_phi_min)
+                                             *(numbers::PI)/180.;
+           const double radius_phi_max_rad = (this->parameters.radius_phi_max)
+                                             *(numbers::PI)/180.;
+
+           //Min and max azimuthal angles of center of loading position (radius) in radians
+           const double radius_theta_min_rad = (this->parameters.radius_theta_min)
+                                               *(numbers::PI)/180.;
+           const double radius_theta_max_rad = (this->parameters.radius_theta_max)
+                                               *(numbers::PI)/180.;
+
+           // ULNA
+           //Min and max polar angles of center of loading position (ulna) in radians
+           const double ulna_phi_min_rad = (this->parameters.ulna_phi_min)
+                                        *(numbers::PI)/180.;
+           const double ulna_phi_max_rad = (this->parameters.ulna_phi_max)
+                                        *(numbers::PI)/180.;
+
+           //Min and max azimuthal angles of center of loading position (radius) in radians
+           const double ulna_theta_min_rad = (this->parameters.ulna_theta_min)
+                                          *(numbers::PI)/180.;
+           const double ulna_theta_max_rad = (this->parameters.ulna_theta_max)
+                                          *(numbers::PI)/180.;
+
+            // Compute maximum distance (grand circle distance)
+            // between max and min loading positions
+            const double max_distance_radius =
+                    GreatCircleDistance(this->parameters.joint_radius,
+                    radius_theta_min_rad, radius_phi_min_rad,
+                    radius_theta_max_rad, radius_phi_max_rad);
+
+            const double max_distance_ulna =
+                    GreatCircleDistance(this->parameters.joint_radius,
+                    ulna_theta_min_rad, ulna_phi_min_rad,
+                    ulna_theta_max_rad, ulna_phi_max_rad);
+
+           const unsigned int num_cycles = this->parameters.num_cycles;
+           const double current_time = this->time.get_current();
+           const double end_load_time = (this->time.get_delta_t())*
+                                  (this->parameters.num_no_load_time_steps);
+           const double final_load_time = (this->time.get_end()) - end_load_time;
+
+           if (current_time <= final_load_time)
+           {
+             // Sinusoidal change between max and min positions of
+             // loading trajectory. Loading trajectory computed as shortest
+             // dist (great circle) between min and max positions.
+               
+               // Compute current distance on great arc circle
+               const double dist_points_radius = max_distance_radius
+                  *(1.0 - std::sin((numbers::PI)
+                  *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
+
+               const double dist_points_ulna = max_distance_ulna
+                   *(1.0 - std::sin((numbers::PI)
+                   *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
+
+               //(theta_point,phi_point);
+               const Point<2> current_radius_load =
+                    PointOnGreatCircle(dist_points_radius,
+                                       this->parameters.joint_radius,
+                                       radius_theta_min_rad,
+                                       radius_phi_min_rad,
+                                       radius_theta_max_rad,
+                                       radius_phi_max_rad);
+
+               const Point<2> current_ulna_load =
+                    PointOnGreatCircle(dist_points_ulna,
+                                       this->parameters.joint_radius,
+                                       ulna_theta_min_rad,
+                                       ulna_phi_min_rad,
+                                       ulna_theta_max_rad,
+                                       ulna_phi_max_rad);
+
+             const JointLoadingPattern<dim>
+             radius_load_spatial_distribution( current_radius_load[0],
+                                               current_radius_load[1],
+                                               this->parameters.radius_area_r,
+                                               this->parameters.joint_radius  );
+             const JointLoadingPattern<dim>
+             ulna_load_spatial_distribution( current_ulna_load[0],
+                                             current_ulna_load[1],
+                                             this->parameters.ulna_area_r,
+                                             this->parameters.joint_radius  );
+
+             load_vector = ( radius_load_spatial_distribution.value({pt[0],pt[1],pt[2]})
+                            + ulna_load_spatial_distribution.value({pt[0],pt[1],pt[2]}) )
+                           * (this->parameters.load) * N;
+         }
+      }
+    }
+    return load_vector;
+  }
+
+private:
+  virtual void
+  make_grid()
+  {
+      //Read external mesh
+      GridIn<dim> gridin;
+      gridin.attach_triangulation(this->triangulation);
+      std::ifstream input_file("humerus_mesh.inp");
+      gridin.read_abaqus(input_file);
+        
+        
+      //double radius = this->parameters.joint_radius;
+      double cylinder_height = (this->parameters.joint_length)
+                                -(this->parameters.joint_radius);
+
+    // Assign boundary IDs
+    for (auto cell : this->triangulation.active_cell_iterators())
+       for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+          if (cell->face(face)->at_boundary() == true  &&
+              std::abs(cell->face(face)->center()[2]+cylinder_height)<1.0e-6)
+                      cell->face(face)->set_boundary_id(0);  //Bottom face
+
+          else if (cell->face(face)->at_boundary() == true  &&
+                   cell->face(face)->center()[2] < 0.0      &&
+                   cell->face(face)->center()[2] > -1.0*cylinder_height )
+                      cell->face(face)->set_boundary_id(1); //Hull of cylinder
+
+          else if (cell->face(face)->at_boundary() == true  &&
+                   cell->face(face)->center()[2] > 0.0         )
+                      cell->face(face)->set_boundary_id(2); //Spherical surface
+
+//    //Set manifolds
+//    const types::manifold_id  sphere_id = 0;
+//    const types::manifold_id  inner_id = 1;
+//    const types::manifold_id  cylinder_id = 2;
+//
+//    const SphericalManifold<dim> spherical_manifold(center);
+//    TransfiniteInterpolationManifold<dim> inner_manifold;
+//    const CylindricalManifold<dim> cylindrical_manifold(2);
+//
+//    //Assign manifold IDs
+//    this->triangulation.set_all_manifold_ids(cylinder_id);
+//    for (auto cell : this->triangulation.active_cell_iterators())
+//      for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+//        if (std::abs(cell->face(face)->center()[0])<1.0e-6 &&
+//            std::abs(cell->face(face)->center()[1])<1.0e-6 &&
+//            cell->center()[2]<0.0                             )
+//              cell->set_all_manifold_ids(numbers::flat_manifold_id);
+//    for (auto cell : this->triangulation.active_cell_iterators())
+//      if (cell->center()[2]>0.0)
+//              cell->set_all_manifold_ids(inner_id);
+//    this->triangulation.set_all_manifold_ids_on_boundary(2,sphere_id);
+//
+//    //Set manifold
+//    this->triangulation.set_manifold (cylinder_id, cylindrical_manifold);
+//    this->triangulation.set_manifold (sphere_id, spherical_manifold);
+//    inner_manifold.initialize(this->triangulation);
+//    this->triangulation.set_manifold (inner_id, inner_manifold);
+
+//     //Refine mesh
+//     this->triangulation.refine_global(1);
+//     inner_manifold.initialize(this->triangulation);
+//     if (this->parameters.global_refinement > 1)
+//      this->triangulation.refine_global((this->parameters.global_refinement)-1);
+
+     //Scale geometry
+     GridTools::scale(this->parameters.scale, this->triangulation);
+  }
+
+  virtual void
+  define_tracked_vertices(std::vector<Point<dim>> &tracked_vertices)
+  {
+    tracked_vertices[0][0] = 0.0*this->parameters.scale;
+    tracked_vertices[0][1] = 0.0*this->parameters.scale;
+    tracked_vertices[0][2] = (this->parameters.joint_radius)
+                              *this->parameters.scale;
+    tracked_vertices[1][0] = 0.0*this->parameters.scale;
+    tracked_vertices[1][1] = 0.0*this->parameters.scale;
+    tracked_vertices[1][2] = ((this->parameters.joint_radius)
+                              -(this->parameters.joint_length))
+                              *this->parameters.scale;
+  }
+
+  virtual double
+  get_prescribed_fluid_flow (const types::boundary_id &boundary_id,
+                             const Point<dim>         &pt) const
+  {
+      //Silence compiler warnings
+      (void)pt;
+      (void)boundary_id;
+      return 0.0;
+  }
+
+  virtual std::pair<types::boundary_id,types::boundary_id>
+  get_reaction_boundary_id_for_output() const
+  {
+      return std::make_pair(1,2);
+  }
+
+  virtual std::pair<types::boundary_id,types::boundary_id>
+  get_drained_boundary_id_for_output() const
+  {
+      return std::make_pair(1,2);
+  }
+
+  virtual std::pair<double, FEValuesExtractors::Scalar>
+  get_dirichlet_load(const types::boundary_id &boundary_id) const
+  {
+      double displ_incr = 0;
+      FEValuesExtractors::Scalar direction;
+      (void)boundary_id;
+      return std::make_pair(displ_incr,direction);
+  }
+};
+
+//@sect4{Loaded surface undrained, rest is drained} NOT WORKING PROPERLY!!!
+template <int dim>
+  class ExternalMeshHumerusPartiallyDrained
+      : public ExternalMeshHumerusBase<dim>
+{
+public:
+    ExternalMeshHumerusPartiallyDrained (const Parameters::AllParameters &parameters)
+    : ExternalMeshHumerusBase<dim> (parameters)
+  {}
+
+  virtual ~ExternalMeshHumerusPartiallyDrained () {}
+    
+private:
+  virtual void
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
+  {
+       // Dirichlet BCs on displacements
+       if (this->parameters.load_type == "displacement")
+       AssertThrow(false,
+         ExcMessage("Displacement loading not defined for the current problem: "
+                     + this->parameters.geom_type));
+      
+       // Fix vertical displ of bottom surface
+       VectorTools::interpolate_boundary_values
+                        (this->dof_handler_ref,
+                         0,
+                         ZeroFunction<dim>(this->n_components),
+                         constraints,
+                         this->fe.component_mask(this->z_displacement) );
+
+       // Fix x and y displ of central node in bottom surface
+       Point<2> fix_node(0.0, 0.0);
+       Tensor<1,dim> N;
+       N[0]=1.0;
+       N[1]=0.0;
+       N[2]=0.0;
+      
+       std::vector<unsigned int> face_dof_indices (this->fe.dofs_per_face);
+      
+       typename DoFHandler<dim>::active_cell_iterator
+       cell = this->dof_handler_ref.begin_active(),
+       endc = this->dof_handler_ref.end();
+       for (; cell != endc; ++cell)
+         for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+         {
+           if ( cell->face(face)->at_boundary() == true  &&
+                cell->face(face)->boundary_id() == 0        )
+             for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
+             {
+                 if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
+                       < (1.0e-6*this->parameters.scale) )
+                    constraints.add_line(cell->vertex_dof_index(node, 0));
+
+                 if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
+                       < (1.0e-6*this->parameters.scale) )
+                    constraints.add_line(cell->vertex_dof_index(node, 1));
+             }
+             
+             // Dirichlet BCs on pressure
+             // For lateral and top surfaces, define constraints based on Neumann load
+             if ( cell->face(face)->at_boundary() == true  &&
+                  (cell->face(face)->boundary_id() == 1 ||
+                   cell->face(face)->boundary_id() == 2   )   )
+             {
+                 // Check value of Neumann load.
+                 Point<dim> pt;
+                 pt[0] = cell->face(face)->center()[0];
+                 pt[1] = cell->face(face)->center()[1];
+                 pt[2] = cell->face(face)->center()[2];
+                 
+                 Tensor<1,dim> load =
+                   this->get_neumann_traction(cell->face(face)->boundary_id(), pt, N);
+                 
+                 // If no load at central point of this face, then apply
+                 // Dirichlet constraint on pressure dof of all nodes in face
+                 if ( abs(load[0]) < 1.0e-10*abs(this->parameters.load) )
+                 {
+                     // Get all dofs in face
+                     cell->face(face)->get_dof_indices(face_dof_indices);
+                     
+                     //Loop over dofs. If it is a pressure dof, add constraint.
+                     for (unsigned int i = 0; i<face_dof_indices.size(); ++i)
+                        if (this->fe.face_system_to_base_index(i).first.first
+                             == this->p_fluid_block)
+                            constraints.add_line (face_dof_indices[i]);
+                 }
+             }
+         }
+          
+       // Dirichlet BCs on pressure
+       // Free flow (pressure = 0) on bottom surface
+       VectorTools::interpolate_boundary_values
+                (this->dof_handler_ref,
+                 0,
+                 ZeroFunction<dim>(this->n_components),
+                 constraints,
+                 (this->fe.component_mask(this->pressure)));
+  }
+};
+    
+//@sect4{All boundaries drained, including the loaded surfaces}
+template <int dim>
+class ExternalMeshHumerusFullyDrained
+  : public ExternalMeshHumerusBase<dim>
+{
+public:
+    ExternalMeshHumerusFullyDrained (const Parameters::AllParameters &parameters)
+  : ExternalMeshHumerusBase<dim> (parameters)
+  {}
+
+virtual ~ExternalMeshHumerusFullyDrained () {}
+
+private:
+  virtual void
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
+  {
+      
+      // Dirichlet BCs on displacements
+      if (this->parameters.load_type == "displacement")
+      AssertThrow(false,
+         ExcMessage("Displacement loading not defined for the current problem: "
+                     + this->parameters.geom_type));
+      
+      // Fix vertical displ of bottom surface
+      VectorTools::interpolate_boundary_values
+                        (this->dof_handler_ref,
+                         0,
+                         ZeroFunction<dim>(this->n_components),
+                         constraints,
+                         this->fe.component_mask(this->z_displacement) );
+
+       // Fix x and y displ of central node in bottom surface
+       Point<2> fix_node(0.0, 0.0);
+
+       typename DoFHandler<dim>::active_cell_iterator
+       cell = this->dof_handler_ref.begin_active(),
+       endc = this->dof_handler_ref.end();
+       for (; cell != endc; ++cell)
+         for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+           if ( cell->face(face)->at_boundary() == true  &&
+                cell->face(face)->boundary_id() == 0        )
+             for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
+             {
+                 if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
+                       < (1.0e-6*this->parameters.scale) )
+                    constraints.add_line(cell->vertex_dof_index(node, 0));
+
+                 if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
+                       < (1.0e-6*this->parameters.scale) )
+                    constraints.add_line(cell->vertex_dof_index(node, 1));
+             }
+
+       // Dirichlet BCs on pressure
+       // Free flow (pressure = 0) on all surfaces
+       VectorTools::interpolate_boundary_values
+                (this->dof_handler_ref,
+                 0,
+                 ZeroFunction<dim>(this->n_components),
+                 constraints,
+                 (this->fe.component_mask(this->pressure)));
+
+       VectorTools::interpolate_boundary_values
+                (this->dof_handler_ref,
+                 1,
+                 ZeroFunction<dim>(this->n_components),
+                 constraints,
+                 (this->fe.component_mask(this->pressure)));
+      
+        VectorTools::interpolate_boundary_values
+                 (this->dof_handler_ref,
+                  2,
+                  ZeroFunction<dim>(this->n_components),
+                  constraints,
+                  (this->fe.component_mask(this->pressure)));
+  }
+};
+
+//@sect4{Cylindrical and spherical surfaces undrained, bottom surface drained}
+template <int dim>
+class ExternalMeshHumerusLateralUndrained
+  : public ExternalMeshHumerusBase<dim>
+{
+public:
+    ExternalMeshHumerusLateralUndrained (const Parameters::AllParameters &parameters)
+  : ExternalMeshHumerusBase<dim> (parameters)
+  {}
+
+virtual ~ExternalMeshHumerusLateralUndrained () {}
+
+private:
+virtual void
+make_dirichlet_constraints(AffineConstraints<double> &constraints)
+{
+  
+  // Dirichlet BCs on displacements
+  if (this->parameters.load_type == "displacement")
+  AssertThrow(false,
+     ExcMessage("Displacement loading not defined for the current problem: "
+                 + this->parameters.geom_type));
+  
+  // Fix vertical displ of bottom surface
+  VectorTools::interpolate_boundary_values
+                    (this->dof_handler_ref,
+                     0,
+                     ZeroFunction<dim>(this->n_components),
+                     constraints,
+                     this->fe.component_mask(this->z_displacement) );
+
+   // Fix x and y displ of central node in bottom surface
+   Point<2> fix_node(0.0, 0.0);
+
+   typename DoFHandler<dim>::active_cell_iterator
+   cell = this->dof_handler_ref.begin_active(),
+   endc = this->dof_handler_ref.end();
+   for (; cell != endc; ++cell)
+     for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+       if ( cell->face(face)->at_boundary() == true  &&
+            cell->face(face)->boundary_id() == 0        )
+         for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
+         {
+             if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
+                   < (1.0e-6*this->parameters.scale) )
+                constraints.add_line(cell->vertex_dof_index(node, 0));
+
+             if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
+                   < (1.0e-6*this->parameters.scale) )
+                constraints.add_line(cell->vertex_dof_index(node, 1));
+         }
+
+   // Dirichlet BCs on pressure
+   // Free flow (pressure = 0) only on bottom surface
+   VectorTools::interpolate_boundary_values
+            (this->dof_handler_ref,
+             0,
+             ZeroFunction<dim>(this->n_components),
+             constraints,
+             (this->fe.component_mask(this->pressure)));
+  }
+};
     
 }
 
@@ -6360,6 +6860,21 @@ try
     else if (parameters.geom_type == "idealised_humerus_laterals_undrained")
     {
       IdealisedHumerusLateralUndrained<3> solid_3d(parameters);
+      solid_3d.run();
+    }
+    else if (parameters.geom_type == "external_mesh_humerus_partially_drained")
+    {
+      ExternalMeshHumerusPartiallyDrained<3> solid_3d(parameters);
+      solid_3d.run();
+    }
+    else if (parameters.geom_type == "external_mesh_humerus_fully_drained")
+    {
+       ExternalMeshHumerusFullyDrained<3> solid_3d(parameters);
+      solid_3d.run();
+    }
+    else if (parameters.geom_type == "external_mesh_humerus_laterals_undrained")
+    {
+      ExternalMeshHumerusLateralUndrained<3> solid_3d(parameters);
       solid_3d.run();
     }
     else
