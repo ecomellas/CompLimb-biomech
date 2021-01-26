@@ -6132,17 +6132,19 @@ private:
        for (; cell != endc; ++cell)
          for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
          {
-           if ( cell->face(face)->at_boundary() == true  &&
-                cell->face(face)->boundary_id() == 0        )
-             for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
+             if ( cell->face(face)->at_boundary() == true  &&
+                  cell->face(face)->boundary_id() == 0        )
              {
-                 if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
-                       < (1.0e-6*this->parameters.scale) )
-                    constraints.add_line(cell->vertex_dof_index(node, 0));
+                 for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
+                 {
+                     if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
+                           < (1.0e-6*this->parameters.scale) )
+                        constraints.add_line(cell->vertex_dof_index(node, 0));
 
-                 if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
-                       < (1.0e-6*this->parameters.scale) )
-                    constraints.add_line(cell->vertex_dof_index(node, 1));
+                     if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
+                           < (1.0e-6*this->parameters.scale) )
+                        constraints.add_line(cell->vertex_dof_index(node, 1));
+                 }
              }
              
              // Dirichlet BCs on pressure
@@ -6606,17 +6608,19 @@ private:
        for (; cell != endc; ++cell)
          for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
          {
-           if ( cell->face(face)->at_boundary() == true  &&
-                cell->face(face)->boundary_id() == 0        )
-             for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
+             if ( cell->face(face)->at_boundary() == true  &&
+                  cell->face(face)->boundary_id() == 0        )
              {
-                 if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
-                       < (1.0e-6*this->parameters.scale) )
-                    constraints.add_line(cell->vertex_dof_index(node, 0));
+                 for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
+                 {
+                     if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
+                           < (1.0e-6*this->parameters.scale) )
+                        constraints.add_line(cell->vertex_dof_index(node, 0));
 
-                 if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
-                       < (1.0e-6*this->parameters.scale) )
-                    constraints.add_line(cell->vertex_dof_index(node, 1));
+                     if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
+                           < (1.0e-6*this->parameters.scale) )
+                        constraints.add_line(cell->vertex_dof_index(node, 1));
+                 }
              }
              
              // Dirichlet BCs on pressure
