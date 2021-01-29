@@ -7,7 +7,7 @@
 #SBATCH --time=12:00:00
 #SBATCH -p short
 #SBATCH --mem=10Gb
-#SBATCH --constraint=E5-2680v4@2.40GHz
+#SBATCH --constraint=broadwell
 
 work=${SLURM_SUBMIT_DIR}/${SLURM_JOB_ID}
 
