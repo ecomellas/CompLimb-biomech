@@ -6164,7 +6164,7 @@ private:
                  
                  // If no load at central point of this face, then apply
                  // Dirichlet constraint on pressure dof of all nodes in face
-                 if ( abs(load[0]) < 1.0e-10*abs(this->parameters.load) )
+                 if ( abs(load[0]) < 1.0e-10 )
                  {
                      // Get all dofs in face
                      cell->face(face)->get_dof_indices(face_dof_indices);
@@ -6352,45 +6352,6 @@ public:
     {
       if ( (boundary_id == 1) || (boundary_id == 2) )
       {
-           // RADIUS
-           //Min and max polar angles of center of loading position (radius) in radians
-           const double radius_phi_min_rad = (this->parameters.radius_phi_min)
-                                             *(numbers::PI)/180.;
-           const double radius_phi_max_rad = (this->parameters.radius_phi_max)
-                                             *(numbers::PI)/180.;
-
-           //Min and max azimuthal angles of center of loading position (radius) in radians
-           const double radius_theta_min_rad = (this->parameters.radius_theta_min)
-                                               *(numbers::PI)/180.;
-           const double radius_theta_max_rad = (this->parameters.radius_theta_max)
-                                               *(numbers::PI)/180.;
-
-           // ULNA
-           //Min and max polar angles of center of loading position (ulna) in radians
-           const double ulna_phi_min_rad = (this->parameters.ulna_phi_min)
-                                        *(numbers::PI)/180.;
-           const double ulna_phi_max_rad = (this->parameters.ulna_phi_max)
-                                        *(numbers::PI)/180.;
-
-           //Min and max azimuthal angles of center of loading position (radius) in radians
-           const double ulna_theta_min_rad = (this->parameters.ulna_theta_min)
-                                          *(numbers::PI)/180.;
-           const double ulna_theta_max_rad = (this->parameters.ulna_theta_max)
-                                          *(numbers::PI)/180.;
-
-            // Compute maximum distance (grand circle distance)
-            // between max and min loading positions
-            const double max_distance_radius =
-                    GreatCircleDistance(this->parameters.joint_radius,
-                    radius_theta_min_rad, radius_phi_min_rad,
-                    radius_theta_max_rad, radius_phi_max_rad);
-
-            const double max_distance_ulna =
-                    GreatCircleDistance(this->parameters.joint_radius,
-                    ulna_theta_min_rad, ulna_phi_min_rad,
-                    ulna_theta_max_rad, ulna_phi_max_rad);
-
-           const unsigned int num_cycles = this->parameters.num_cycles;
            const double current_time = this->time.get_current();
            const double end_load_time = (this->time.get_delta_t())*
                                   (this->parameters.num_no_load_time_steps);
@@ -6398,9 +6359,49 @@ public:
 
            if (current_time <= final_load_time)
            {
-             // Sinusoidal change between max and min positions of
+             // Sinusoidal change between min and max positions of
              // loading trajectory. Loading trajectory computed as shortest
              // dist (great circle) between min and max positions.
+               
+                // RADIUS
+                // Min and max polar angles of center of loading position (radius) in radians
+                const double radius_phi_min_rad = (this->parameters.radius_phi_min)
+                                                  *(numbers::PI)/180.;
+                const double radius_phi_max_rad = (this->parameters.radius_phi_max)
+                                                  *(numbers::PI)/180.;
+
+                // Min and max azimuthal angles of center of loading position (radius) in radians
+                const double radius_theta_min_rad = (this->parameters.radius_theta_min)
+                                                    *(numbers::PI)/180.;
+                const double radius_theta_max_rad = (this->parameters.radius_theta_max)
+                                                    *(numbers::PI)/180.;
+
+                // ULNA
+                // Min and max polar angles of center of loading position (ulna) in radians
+                const double ulna_phi_min_rad = (this->parameters.ulna_phi_min)
+                                             *(numbers::PI)/180.;
+                const double ulna_phi_max_rad = (this->parameters.ulna_phi_max)
+                                             *(numbers::PI)/180.;
+
+                // Min and max azimuthal angles of center of loading position (radius) in radians
+                const double ulna_theta_min_rad = (this->parameters.ulna_theta_min)
+                                               *(numbers::PI)/180.;
+                const double ulna_theta_max_rad = (this->parameters.ulna_theta_max)
+                                               *(numbers::PI)/180.;
+
+                // Compute maximum distance (grand circle distance)
+                // between max and min loading positions
+                const double max_distance_radius =
+                         GreatCircleDistance(this->parameters.joint_radius,
+                         radius_theta_min_rad, radius_phi_min_rad,
+                         radius_theta_max_rad, radius_phi_max_rad);
+
+                const double max_distance_ulna =
+                         GreatCircleDistance(this->parameters.joint_radius,
+                         ulna_theta_min_rad, ulna_phi_min_rad,
+                         ulna_theta_max_rad, ulna_phi_max_rad);
+
+                const unsigned int num_cycles = this->parameters.num_cycles;
                
                // Compute current distance on great arc circle
                const double dist_points_radius = max_distance_radius
@@ -6411,7 +6412,7 @@ public:
                    *(1.0 - std::sin((numbers::PI)
                    *(2.0*num_cycles*current_time/final_load_time + 0.5)))/2.0;
 
-               //(theta_point,phi_point);
+               // (theta_point,phi_point);
                const Point<2> current_radius_load =
                     PointOnGreatCircle(dist_points_radius,
                                        this->parameters.joint_radius,
@@ -6428,20 +6429,32 @@ public:
                                        ulna_theta_max_rad,
                                        ulna_phi_max_rad);
 
-             const JointLoadingPattern<dim>
-             radius_load_spatial_distribution( current_radius_load[0],
-                                               current_radius_load[1],
-                                               this->parameters.radius_area_r,
-                                               this->parameters.joint_radius  );
-             const JointLoadingPattern<dim>
-             ulna_load_spatial_distribution( current_ulna_load[0],
-                                             current_ulna_load[1],
-                                             this->parameters.ulna_area_r,
-                                             this->parameters.joint_radius  );
-
-             load_vector = ( radius_load_spatial_distribution.value({pt[0],pt[1],pt[2]})
-                            + ulna_load_spatial_distribution.value({pt[0],pt[1],pt[2]}) )
-                           * (this->parameters.load) * N;
+                const JointLoadingPattern<dim>
+                radius_load_spatial_distribution( current_radius_load[0],
+                                                  current_radius_load[1],
+                                                  this->parameters.radius_area_r,
+                                                  this->parameters.joint_radius  );
+                const JointLoadingPattern<dim>
+                ulna_load_spatial_distribution( current_ulna_load[0],
+                                                current_ulna_load[1],
+                                                this->parameters.ulna_area_r,
+                                                this->parameters.joint_radius  );
+               
+             // Load intensity reduced according to input factor.
+             // Sinusoidal change between max value at start position of loading trajectory,
+             // min value at max position, and max value at end position.
+               
+               
+                const double max_load_value = this->parameters.load;
+                const double min_load_value = max_load_value*(1.0 - this->parameters.load_reduction);
+               
+                double current_load_value = min_load_value + (max_load_value - min_load_value)*
+               (1.0 + std::cos((numbers::PI)*(2.0*num_cycles*current_time/final_load_time)))/2.0;
+               
+                // Compute load vector for given position.
+                load_vector = ( radius_load_spatial_distribution.value({pt[0],pt[1],pt[2]})
+                                + ulna_load_spatial_distribution.value({pt[0],pt[1],pt[2]}) )
+                              * current_load_value * N;
          }
       }
     }
@@ -6463,55 +6476,21 @@ private:
       double cylinder_height = (this->parameters.joint_length)
                                 -(this->parameters.joint_radius);
 
-    // Assign boundary IDs
-    for (auto cell : this->triangulation.active_cell_iterators())
-       for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
-          if (cell->face(face)->at_boundary() == true  &&
-              std::abs(cell->face(face)->center()[2]+cylinder_height)<1.0e-6)
+      // Assign boundary IDs
+      for (auto cell : this->triangulation.active_cell_iterators())
+          for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+            if (cell->face(face)->at_boundary() == true  &&
+                std::abs(cell->face(face)->center()[2]+cylinder_height)<1.0e-6)
                       cell->face(face)->set_boundary_id(0);  //Bottom face
 
-          else if (cell->face(face)->at_boundary() == true  &&
-                   cell->face(face)->center()[2] < 0.0      &&
-                   cell->face(face)->center()[2] > -1.0*cylinder_height )
-                      cell->face(face)->set_boundary_id(1); //Hull of cylinder
+            else if (cell->face(face)->at_boundary() == true  &&
+                     cell->face(face)->center()[2] < 0.0      &&
+                     cell->face(face)->center()[2] > -1.0*cylinder_height )
+                        cell->face(face)->set_boundary_id(1); //Surface of shaft
 
-          else if (cell->face(face)->at_boundary() == true  &&
-                   cell->face(face)->center()[2] > 0.0         )
-                      cell->face(face)->set_boundary_id(2); //Spherical surface
-
-//    //Set manifolds
-//    const types::manifold_id  sphere_id = 0;
-//    const types::manifold_id  inner_id = 1;
-//    const types::manifold_id  cylinder_id = 2;
-//
-//    const SphericalManifold<dim> spherical_manifold(center);
-//    TransfiniteInterpolationManifold<dim> inner_manifold;
-//    const CylindricalManifold<dim> cylindrical_manifold(2);
-//
-//    //Assign manifold IDs
-//    this->triangulation.set_all_manifold_ids(cylinder_id);
-//    for (auto cell : this->triangulation.active_cell_iterators())
-//      for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
-//        if (std::abs(cell->face(face)->center()[0])<1.0e-6 &&
-//            std::abs(cell->face(face)->center()[1])<1.0e-6 &&
-//            cell->center()[2]<0.0                             )
-//              cell->set_all_manifold_ids(numbers::flat_manifold_id);
-//    for (auto cell : this->triangulation.active_cell_iterators())
-//      if (cell->center()[2]>0.0)
-//              cell->set_all_manifold_ids(inner_id);
-//    this->triangulation.set_all_manifold_ids_on_boundary(2,sphere_id);
-//
-//    //Set manifold
-//    this->triangulation.set_manifold (cylinder_id, cylindrical_manifold);
-//    this->triangulation.set_manifold (sphere_id, spherical_manifold);
-//    inner_manifold.initialize(this->triangulation);
-//    this->triangulation.set_manifold (inner_id, inner_manifold);
-
-//     //Refine mesh
-//     this->triangulation.refine_global(1);
-//     inner_manifold.initialize(this->triangulation);
-//     if (this->parameters.global_refinement > 1)
-//      this->triangulation.refine_global((this->parameters.global_refinement)-1);
+            else if (cell->face(face)->at_boundary() == true  &&
+                     cell->face(face)->center()[2] > 0.0         )
+                        cell->face(face)->set_boundary_id(2); //Head surface
 
      //Scale geometry
      GridTools::scale(this->parameters.scale, this->triangulation);
@@ -6522,13 +6501,12 @@ private:
   {
     tracked_vertices[0][0] = 0.0*this->parameters.scale;
     tracked_vertices[0][1] = 0.0*this->parameters.scale;
-    tracked_vertices[0][2] = (this->parameters.joint_radius)
-                              *this->parameters.scale;
+    tracked_vertices[0][2] = 0.0*this->parameters.scale;
     tracked_vertices[1][0] = 0.0*this->parameters.scale;
     tracked_vertices[1][1] = 0.0*this->parameters.scale;
     tracked_vertices[1][2] = ((this->parameters.joint_radius)
-                              -(this->parameters.joint_length))
-                              *this->parameters.scale;
+                                -(this->parameters.joint_length))
+                                *this->parameters.scale;
   }
 
   virtual double
@@ -6640,7 +6618,7 @@ private:
                  
                  // If no load at central point of this face, then apply
                  // Dirichlet constraint on pressure dof of all nodes in face
-                 if ( abs(load[0]) < 1.0e-10*abs(this->parameters.load) )
+                 if ( abs(load[0]) < 1.0e-10 )
                  {
                      // Get all dofs in face
                      cell->face(face)->get_dof_indices(face_dof_indices);
