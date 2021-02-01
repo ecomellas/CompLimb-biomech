@@ -162,7 +162,7 @@
  # ===== Pressure-driven or joint growth only =====
  
  # Mechanical growth rate
- set growth rate mech = 0.0
+set growth rate mech = 0.0
  
  # Nature of the dependency of growth on the mechanical stimuli (linear, quadratic, etc.)
  set growth exponential mech = 1.0
@@ -170,20 +170,19 @@
  # ===== Joint growth only =====
  
  # Biological growth rate
- set growth rate bio = 0.0
+set growth rate bio = 1.0e-3
  
  # Polynomial coefficient order 0
- set growth bio coeff 0 = 0.49
- 
+ set growth bio coeff 0 = 0.14
+
  # Polynomial coefficient order 1
- set growth bio coeff 1 = -3.14
- 
+ set growth bio coeff 1 = -0.87
+
  # Polynomial coefficient order 2
- set growth bio coeff 2 = 9.91
- 
+ set growth bio coeff 2 = 4.40
+
  # Polynomial coefficient order 3
- set growth bio coeff 3 = -6.65
- 
+ set growth bio coeff 3 = -2.66
  
  # ------------------------ FLUID ----------------------------------
  
@@ -260,7 +259,7 @@
  set End time            = 1.1
  
  # Time step size [s]
- set Time step size      = 0.1
+set Time step size      = 0.1
  end
  
  
