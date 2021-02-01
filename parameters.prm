@@ -46,17 +46,24 @@
  # Increase of pressure at drained boundary [Pa] w.r.t. atmospheric pressure
  set Drained pressure    = 0
  
- # ===== idealised_half_joint only =====
+ # ===== humerus geometries only =====
  
  # Joint rudiment dimensions [mm] (this will be multiplied by grid scale above)
- set Joint length = 0.60
- set Joint radius = 0.30
+ # For idealised_humerus "Joint length" is the whole proximo-distal (PD) distance 
+ # (incl. hemispherical cap  of radius = "Joint radius")
+ # For external_mesh_humerus "Joint length" corresponds to the maximum PD length and is 
+ # required to define BCs. "Joint radius" corresponds to the idealized hemispherical
+ # cap radius that and is used in defining load position on external mesh.
+ # Both are used to define biological growth function.
+ # Mesh must be oriented such that coordinate (0, 0, 0) is at center of the  
+ # hemispherical cap and z-axis corresponds to PD axis.
+ set Joint length = 1.00
+ set Joint radius = 0.40
  
  # Polar (phi) and azimuthal (theta) angle range of contact area for radius.
  # All angles given in degrees. For polar angle, 0 deg coincides with 
  # positive z-axis direction and corresponds to top of spherical cap.
  # For azimuthal angle, 0 deg coincides with positive x-axis direction.
- # 50 deg +/- 20 deg
  set Radius phi min   = 35
  set Radius phi max   = 90
  set Radius theta min = 155
@@ -67,7 +74,6 @@
  # All angles given in degrees. For polar angle, 0 deg coincides with 
  # positive z-axis direction and corresponds to top of spherical cap.
  # For azimuthal angle, 0 deg coincides with positive x-axis direction.
- # 23 deg +/- 20 deg
  set Ulna phi min   = 15
  set Ulna phi max   = 40
  set Ulna theta min = 260
