@@ -50,9 +50,11 @@ for load in loads:
         cwd = os.getcwd()
         os.mkdir(jobname)
         src_file_prm = cwd+"/parameters.prm"
+        src_file_msh = cwd+"/humerus_mesh.inp"
         src_file_slurm = cwd+"/run-multi-dealii.slurm"
         dst_path = cwd+"/"+jobname
         shutil.copy2(src_file_prm, dst_path)
+        shutil.copy2(src_file_msh, dst_path)
         shutil.copy2(src_file_slurm, dst_path)
         
         # access new folder and make changes in parameter file

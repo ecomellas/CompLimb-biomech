@@ -1,18 +1,19 @@
 #!/bin/bash
 #SBATCH -N 1
-#SBATCH -n 12
+#SBATCH -n 8
 #SBATCH -J CompLimb
 #SBATCH --output=%j.out
 #SBATCH --error=%j.err
-#SBATCH --time=15:00:00
+#SBATCH --time=10:00:00
 #SBATCH -p short
-#SBATCH --mem=15Gb
-#SBATCH --constraint=E5-2680v4@2.40GHz
+#SBATCH --mem=10Gb
+#SBATCH --constraint=broadwell
 
 work=${SLURM_SUBMIT_DIR}/${SLURM_JOB_ID}
 
 mkdir ${work}
 cp parameters.prm ${work}
+cp humerus_mesh.inp ${work}
 cd $work
 
 echo Running on host `hostname`
@@ -24,4 +25,4 @@ module load gcc/7.3.0
 module load openmpi/4.0.3-skylake-gcc7.3
 module load cmake-3.17.3-gcc-7.3.0-ed5iorn
 spack load dealii
-mpirun -np 12 ../../complimb-biomech
+mpirun -np 8 ../../complimb-biomech
