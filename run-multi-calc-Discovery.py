@@ -44,7 +44,7 @@ for load in loads:
             kmech = "10.0"
 
         # define jobname
-        jobname = "p-bio-func-orig__dt_"+dt+"__kbio_"+kbio+"__kmech_"+kmech+"__load_"+load
+        jobname = "p-bio-func-orig__dt_0.1__kbio_"+kbio+"__kmech_"+kmech+"__load_"+load
         
         # create new folder, copy parameters and slurm files into it
         cwd = os.getcwd()
