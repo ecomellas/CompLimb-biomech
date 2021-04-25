@@ -6504,9 +6504,10 @@ private:
     tracked_vertices[0][2] = 0.0*this->parameters.scale;
     tracked_vertices[1][0] = 0.0*this->parameters.scale;
     tracked_vertices[1][1] = 0.0*this->parameters.scale;
-    tracked_vertices[1][2] = ((this->parameters.joint_radius)
-                                -(this->parameters.joint_length))
-                                *this->parameters.scale;
+    tracked_vertices[1][2] = 0.0*this->parameters.scale;
+//      ((this->parameters.joint_radius)
+//                                -(this->parameters.joint_length))
+//                                *this->parameters.scale;
   }
 
   virtual double
