@@ -315,7 +315,7 @@ namespace CompLimb
                             "Radius of load contact area corresponding to "
                             "the effect of the ulna, only for humerus geometries.");
           
-          prm.declare_entry("Load value reduction", "0.0",
+          prm.declare_entry("Load reduction value", "0.0",
                             Patterns::Double(-1,1),
                             "Reduction in value of loading (0:no reduction; "
                             "1:full reduction, i.e. no load at max angles), "
@@ -357,7 +357,7 @@ namespace CompLimb
         ulna_theta_min = prm.get_double("Ulna theta min");
         ulna_theta_max = prm.get_double("Ulna theta max");
         ulna_area_r = prm.get_double("Ulna area radius");
-        load_reduction = prm.get_double("Load value reduction");
+        load_reduction = prm.get_double("Load reduction value");
         num_cycles = prm.get_integer("Number of cycles");
         num_no_load_time_steps = prm.get_integer("Number of no-load time steps");
       }
@@ -6504,10 +6504,9 @@ private:
     tracked_vertices[0][2] = 0.0*this->parameters.scale;
     tracked_vertices[1][0] = 0.0*this->parameters.scale;
     tracked_vertices[1][1] = 0.0*this->parameters.scale;
-    tracked_vertices[1][2] = 0.0*this->parameters.scale;
-//      ((this->parameters.joint_radius)
-//                                -(this->parameters.joint_length))
-//                                *this->parameters.scale;
+    tracked_vertices[1][2] = ((this->parameters.joint_radius)
+                                -(this->parameters.joint_length))
+                                *this->parameters.scale;
   }
 
   virtual double
@@ -6558,6 +6557,10 @@ private:
   virtual void
   make_dirichlet_constraints(AffineConstraints<double> &constraints)
   {
+      AssertThrow(false,
+         ExcMessage("This problem has not been fully-validated yet: "
+                     + this->parameters.geom_type));
+      
        // Dirichlet BCs on displacements
        if (this->parameters.load_type == "displacement")
        AssertThrow(false,
