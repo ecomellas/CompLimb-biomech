@@ -6116,8 +6116,9 @@ private:
                          ZeroFunction<dim>(this->n_components),
                          constraints,
                          this->fe.component_mask(this->z_displacement) );
-
-       // Fix x and y displ of central node in bottom surface
+      
+       // Fix "cross" in bottom surface to avoid rotation
+       // but allow outward motion in the plane
        Point<2> fix_node(0.0, 0.0);
        Tensor<1,dim> N;
        N[0]=1.0;
@@ -6138,12 +6139,12 @@ private:
                  for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
                  {
                      if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
-                           < (1.0e-6*this->parameters.scale) )
-                        constraints.add_line(cell->vertex_dof_index(node, 0));
+                           < (0.1*this->parameters.joint_radius*this->parameters.scale) )
+                        constraints.add_line(cell->vertex_dof_index(node, 1));
 
                      if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
-                           < (1.0e-6*this->parameters.scale) )
-                        constraints.add_line(cell->vertex_dof_index(node, 1));
+                           < (0.1*this->parameters.joint_radius*this->parameters.scale) )
+                        constraints.add_line(cell->vertex_dof_index(node, 0));
                  }
              }
              
@@ -6220,7 +6221,8 @@ private:
                          constraints,
                          this->fe.component_mask(this->z_displacement) );
 
-       // Fix x and y displ of central node in bottom surface
+       // Fix "cross" in bottom surface to avoid rotation
+       // but allow outward motion in the plane
        Point<2> fix_node(0.0, 0.0);
 
        typename DoFHandler<dim>::active_cell_iterator
@@ -6233,12 +6235,12 @@ private:
              for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
              {
                  if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
-                       < (1.0e-6*this->parameters.scale) )
-                    constraints.add_line(cell->vertex_dof_index(node, 0));
+                       < (0.1*this->parameters.joint_radius*this->parameters.scale) )
+                    constraints.add_line(cell->vertex_dof_index(node, 1));
 
                  if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
-                       < (1.0e-6*this->parameters.scale) )
-                    constraints.add_line(cell->vertex_dof_index(node, 1));
+                       < (0.1*this->parameters.joint_radius*this->parameters.scale) )
+                    constraints.add_line(cell->vertex_dof_index(node, 0));
              }
 
        // Dirichlet BCs on pressure
@@ -6296,8 +6298,9 @@ make_dirichlet_constraints(AffineConstraints<double> &constraints)
                      ZeroFunction<dim>(this->n_components),
                      constraints,
                      this->fe.component_mask(this->z_displacement) );
-
-   // Fix x and y displ of central node in bottom surface
+    
+   // Fix "cross" in bottom surface to avoid rotation
+   // but allow outward motion in the plane
    Point<2> fix_node(0.0, 0.0);
 
    typename DoFHandler<dim>::active_cell_iterator
@@ -6310,12 +6313,12 @@ make_dirichlet_constraints(AffineConstraints<double> &constraints)
          for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
          {
              if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
-                   < (1.0e-6*this->parameters.scale) )
-                constraints.add_line(cell->vertex_dof_index(node, 0));
+                   < (0.1*this->parameters.joint_radius*this->parameters.scale) )
+                constraints.add_line(cell->vertex_dof_index(node, 1));
 
              if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
-                   < (1.0e-6*this->parameters.scale) )
-                constraints.add_line(cell->vertex_dof_index(node, 1));
+                   < (0.1*this->parameters.joint_radius*this->parameters.scale) )
+                constraints.add_line(cell->vertex_dof_index(node, 0));
          }
 
    // Dirichlet BCs on pressure
