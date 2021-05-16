@@ -81,9 +81,10 @@ set Ulna theta min = 95
 set Ulna theta max = 150
 set Ulna area radius = 20.0
 
-# Reduction in value of loading (0:no reduction; 1:full reduction, i.e. no load at max angles).
+# Reduction in value of loading (0:no reduction; 1:100% reduction, i.e. no load at max angles).
 # Load intensity follows a max-min-max sinusoidal form, where minimum intensity of loading
-# corresponds to maximum angle. A negative value will result in increase, not reduction.
+# corresponds to maximum angle. A negative value will result in increase, not reduction. 
+# So, -1 will mean the max angle will have 100% more load value (i.e. initial load value x2).
 # Initial and final values of loading are "Load value" set above.
 set Load reduction value = 0
 
