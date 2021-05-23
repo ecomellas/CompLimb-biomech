@@ -4,9 +4,9 @@
 #SBATCH -J CompLimb
 #SBATCH --output=%j.out
 #SBATCH --error=%j.err
-#SBATCH --time=10:00:00
+#SBATCH --time=6:00:00
 #SBATCH -p short
-#SBATCH --mem=10Gb
+#SBATCH --mem=4Gb
 #SBATCH --constraint=broadwell
 
 work=${SLURM_SUBMIT_DIR}/${SLURM_JOB_ID}

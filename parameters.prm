@@ -26,6 +26,7 @@ subsection Geometry
 #                  | external_mesh_humerus_partially_drained (not fully-validated)
 #                  | external_mesh_humerus_fully_drained
 #                  | external_mesh_humerus_laterals_undrained
+#                  | external_mesh_humerus_bottom_undrained
 set Geometry type       = external_mesh_humerus_fully_drained
 
 # Global refinement level (higher value means finer mesh).
