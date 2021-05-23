@@ -219,7 +219,8 @@ namespace CompLimb
                                                "|idealised_humerus_laterals_undrained"
                                                "|external_mesh_humerus_partially_drained"
                                                "|external_mesh_humerus_fully_drained"
-                                               "|external_mesh_humerus_laterals_undrained"),
+                                               "|external_mesh_humerus_laterals_undrained"
+                                               "|external_mesh_humerus_bottom_undrained"),
                               "Type of geometry used. ");
 
         prm.declare_entry("Global refinement", "1",
@@ -6790,6 +6791,75 @@ make_dirichlet_constraints(AffineConstraints<double> &constraints)
   }
 };
     
+//@sect4{All boundaries drained, except bottom surface}
+template <int dim>
+class ExternalMeshHumerusBottomUndrained
+  : public ExternalMeshHumerusBase<dim>
+{
+public:
+    ExternalMeshHumerusBottomUndrained (const Parameters::AllParameters &parameters)
+  : ExternalMeshHumerusBase<dim> (parameters)
+  {}
+
+virtual ~ExternalMeshHumerusBottomUndrained () {}
+
+private:
+  virtual void
+  make_dirichlet_constraints(AffineConstraints<double> &constraints)
+  {
+      
+      // Dirichlet BCs on displacements
+      if (this->parameters.load_type == "displacement")
+      AssertThrow(false,
+         ExcMessage("Displacement loading not defined for the current problem: "
+                     + this->parameters.geom_type));
+      
+      // Fix vertical displ of bottom surface
+      VectorTools::interpolate_boundary_values
+                        (this->dof_handler_ref,
+                         0,
+                         ZeroFunction<dim>(this->n_components),
+                         constraints,
+                         this->fe.component_mask(this->z_displacement) );
+
+       // Fix x and y displ of central node in bottom surface
+       Point<2> fix_node(0.0, 0.0);
+
+       typename DoFHandler<dim>::active_cell_iterator
+       cell = this->dof_handler_ref.begin_active(),
+       endc = this->dof_handler_ref.end();
+       for (; cell != endc; ++cell)
+         for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
+           if ( cell->face(face)->at_boundary() == true  &&
+                cell->face(face)->boundary_id() == 0        )
+             for (unsigned int node=0; node<GeometryInfo<dim>::vertices_per_face; ++node)
+             {
+                 if ( abs(cell->face(face)->vertex(node)[0]-fix_node[0])
+                       < (1.0e-6*this->parameters.scale) )
+                    constraints.add_line(cell->vertex_dof_index(node, 0));
+
+                 if ( abs(cell->face(face)->vertex(node)[1]-fix_node[1])
+                       < (1.0e-6*this->parameters.scale) )
+                    constraints.add_line(cell->vertex_dof_index(node, 1));
+             }
+
+       // Dirichlet BCs on pressure
+       // Free flow (pressure = 0) on all surfaces except bottom one
+       VectorTools::interpolate_boundary_values
+                (this->dof_handler_ref,
+                 1,
+                 ZeroFunction<dim>(this->n_components),
+                 constraints,
+                 (this->fe.component_mask(this->pressure)));
+      
+        VectorTools::interpolate_boundary_values
+                 (this->dof_handler_ref,
+                  2,
+                  ZeroFunction<dim>(this->n_components),
+                  constraints,
+                  (this->fe.component_mask(this->pressure)));
+  }
+};
 }
 
 
@@ -6864,6 +6934,11 @@ try
     else if (parameters.geom_type == "external_mesh_humerus_laterals_undrained")
     {
       ExternalMeshHumerusLateralUndrained<3> solid_3d(parameters);
+      solid_3d.run();
+    }
+    else if (parameters.geom_type == "external_mesh_humerus_bottom_undrained")
+    {
+      ExternalMeshHumerusBottomUndrained<3> solid_3d(parameters);
       solid_3d.run();
     }
     else
