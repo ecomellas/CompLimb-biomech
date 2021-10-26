@@ -14,7 +14,7 @@ Publications
 --------
 This code has been used in the following study:
 
-Ester Comellas, Johanna E Farkas, Giona Kleinberg, Katlyn Lloyd, Thomas Mueller, Timothy J Duerr, Jose J Muñoz, James R Monaghan and Sandra J Shefelbine (2021), Local mechanical stimuli shape tissue growth in vertebrate joint morphogenesis, bioRxiv 2021.08.28.458034; doi: 10.1101/2021.08.28.458034(https://doi.org/10.1101/2021.08.28.458034).
+Ester Comellas, Johanna E Farkas, Giona Kleinberg, Katlyn Lloyd, Thomas Mueller, Timothy J Duerr, Jose J Muñoz, James R Monaghan and Sandra J Shefelbine (2021), Local mechanical stimuli shape tissue growth in vertebrate joint morphogenesis, bioRxiv 2021.08.28.458034; doi: [10.1101/2021.08.28.458034](https://doi.org/10.1101/2021.08.28.458034).
 
 
 About the CompLimb project
@@ -43,17 +43,26 @@ Instructions
 ---------------- 
 To run this code, follow the instructions on the [deal.ii website](https://www.dealii.org/download.html) to download and install deal.ii. Then, from a terminal in your computer, navigate to where the complimb-biomech.cc and CMakeLists.txt files are, and type:
 > cmake .
+
 Now build the code by typing:
+
 > make release
+
 or
+
 > make debug
+
 Then, following instructions, recompile by typing:
+
 > make
+
 To run the examples provided, create a folder “run” and copy the parameters.prm file (and the humerus_mesh.inp if running the realistic geometry examples) in there. Now, type:
+
 > mpirun -np 4 -wdir ./run ../complimb-biomech
+
 Change 4 for desired number of processes to be used.
 
-The content of the parameters.inp file is self-explanatory, however the most important aspects are briefly described below:
+The content of the parameters.inp file is self-explanatory, however the most important aspects are briefly described below.
 
 Type of geometry:
 - **growing_muffin**: Initial test to ensure continuum growth was correctly implemented. It loosely reproduces the example in Fig 4 of Kuhl (2014), doi: 10.1016/j.jmbbm.2013.10.009.
