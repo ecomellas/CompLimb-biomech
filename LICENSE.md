@@ -9,7 +9,7 @@ It is free software; you can use it, redistribute it, and/or modify it under the
 
 This allows you to use the library free of charge for private, academic, or commercial use (under the terms of the GPL v3.0 or later).  This work is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. 
 
-In addition to the terms imposed by the licence, I ask for the courtesy that scientific publications presenting results obtained with this code acknowledges its use. Please cite the the deal.ii library and my work, a list of which is available in [ResearchGate](https://www.researchgate.net/profile/Ester_Comellas/research) and [Google Scholar](https://scholar.google.com/citations?user=-itkhzkAAAAJ&hl=ca&oi=ao).
+In addition to the terms imposed by the licence, I ask for the courtesy that scientific publications presenting results obtained with this code acknowledges its use. Please cite the the [deal.ii library](https://www.dealii.org/publications.html) and my work, a list of which is available in [ResearchGate](https://www.researchgate.net/profile/Ester_Comellas/research) and [Google Scholar](https://scholar.google.com/citations?user=-itkhzkAAAAJ&hl=ca&oi=ao).
 
 
 

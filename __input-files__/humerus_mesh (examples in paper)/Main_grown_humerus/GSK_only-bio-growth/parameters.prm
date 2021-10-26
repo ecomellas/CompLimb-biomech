@@ -170,7 +170,7 @@ set growth incr          = 0.01
 # ===== Pressure-driven or joint growth only =====
 
 # Mechanical growth rate [1/s]
-set growth rate mech = 1.0e-5
+set growth rate mech =  0.0
 
 # Nature of the dependency of growth on the mechanical stimuli (linear, quadratic, etc.)
 set growth exponential mech = 1.0

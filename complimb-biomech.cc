@@ -17,7 +17,7 @@
 /*  CompLimb-biomech
  *  Author: Ester Comellas
  *          Northeastern University and
- *          Universitat Politècnica de Catalunya, 2019
+ *          Universitat Politècnica de Catalunya, 2019-2021
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -4716,7 +4716,7 @@ void Solid<dim>::output_results_to_plot(
                       = Physics::Elasticity::Kinematics::F(solution_grads_u_f[f_q_point]);
 
                   const Tensor<2,dim,ADNumberType> F_inv_AD = invert(F_AD);
-                  ADNumberType det_F_AD = determinant(F_AD);
+//                  ADNumberType det_F_AD = determinant(F_AD);
 
                   const std::vector<std::shared_ptr<const PointHistory<dim,ADNumberType>>>
                       lqph = quadrature_point_history.get_data(cell);
@@ -4724,7 +4724,7 @@ void Solid<dim>::output_results_to_plot(
 
                   //Seepage velocity
                   Tensor<1,dim> seepage;
-                  double det_F = Tensor<0,dim,double>(det_F_AD);
+//                  double det_F = Tensor<0,dim,double>(det_F_AD);
                   const Tensor<1,dim,ADNumberType> grad_p
                                     = solution_grads_p_f[f_q_point]*F_inv_AD;
                   const Tensor<1,dim,ADNumberType> seepage_AD
@@ -4732,8 +4732,12 @@ void Solid<dim>::output_results_to_plot(
 
                   for (unsigned int i=0; i<dim; ++i)
                       seepage[i] = Tensor<0,dim,double>(seepage_AD[i]);
-
-                  sum_total_flow_mpi += (seepage/det_F) * N * JxW_f;
+                  
+//                  sum_total_flow_mpi += (seepage/det_F) * N * JxW_f;
+                  const Tensor<2,dim,ADNumberType> F_inv_AD_trans = transpose(F_inv_AD);
+                  const Tensor<1,dim> temp1 = contract<0,0>(seepage,F_inv_AD_trans);
+                  sum_total_flow_mpi += temp1 * N * JxW_f;
+                  
               }//end gauss points on faces loop
           }
       }//end face loop
@@ -5671,6 +5675,13 @@ private:
 // We group the definition of the geometry, boundary and loading conditions specific to
 // the examples related to axolotl joint morphogenesis into specific classes.
 
+// In our preliminary examples we assumed the humerus just after cavitation could be
+// approximated as a cylinder with a spherical cap (idealized geometry). We later realized
+// this was an over-simplifaction and would not be able to "grow" the final shape staring
+// from this geometry. Analysis of a 17 days post amputation limb confirmed that a basic
+// shape is already present shortly after the elbow joint has cavitated. For this reason
+// we then implemented a realistic geometry based on the experimental data.
+
 // This function returns the great circle distance between two points
 double GreatCircleDistance (const double joint_r, //sphere radius of geometry representing joint
                             const double theta_1, //Min azimuth angle of center of loading position
@@ -5696,7 +5707,7 @@ double GreatCircleDistance (const double joint_r, //sphere radius of geometry re
 
 // This function returns the azimuth and polar angles of a point at a given distance
 // along the great circle distance between two points.
-Point<2> PointOnGreatCircle ( const double dist_point, //distance og the point
+Point<2> PointOnGreatCircle ( const double dist_point, //distance of the point
                               const double joint_r,  //sphere radius of geometry representing joint
                               const double theta_1,  //Min azimuth angle of center of loading position
                               const double phi_1_in,    //Min polar angle of center of loading position

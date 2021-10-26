@@ -26,15 +26,14 @@ subsection Geometry
 #                  | external_mesh_humerus_partially_drained (not fully-validated)
 #                  | external_mesh_humerus_fully_drained
 #                  | external_mesh_humerus_laterals_undrained
-#                  | external_mesh_humerus_bottom_undrained
-set Geometry type       = external_mesh_humerus_bottom_undrained
+set Geometry type       = external_mesh_humerus_fully_drained
 
 # Global refinement level (higher value means finer mesh).
 # external_mesh_humerus does not use this value since it is not refined
 set Global refinement   = 1
 
 # Global grid scaling factor (scales geometry size)
-set Grid scale          = 2.5
+set Grid scale          = 1.6667
 
 #  Type of loading: pressure | displacement | none
 set Load type           = pressure
@@ -66,21 +65,21 @@ set Joint radius = 100
 # All angles given in degrees. For polar angle, 0 deg coincides with
 # positive z-axis direction and corresponds to top of spherical cap.
 # For azimuthal angle, 0 deg coincides with positive x-axis direction.
-set Radius phi min   = 60
-set Radius phi max   = 100
-set Radius theta min = 195
-set Radius theta max = 190
+set Radius phi min   = 75
+set Radius phi max   = 75
+set Radius theta min = 192
+set Radius theta max = 192
 set Radius area radius = 40.0
 
 # Polar (phi) and azimuthal (theta) angle range of contact area for ulna
 # All angles given in degrees. For polar angle, 0 deg coincides with
 # positive z-axis direction and corresponds to top of spherical cap.
 # For azimuthal angle, 0 deg coincides with positive x-axis direction.
-set Ulna phi min   = 45
-set Ulna phi max   = 55
-set Ulna theta min = 95
-set Ulna theta max = 120
-set Ulna area radius = 10
+set Ulna phi min   = 0
+set Ulna phi max   = 0
+set Ulna theta min = 0
+set Ulna theta max = 0
+set Ulna area radius = 0.0
 
 # Reduction in value of loading (0:no reduction; 1:full reduction, i.e. no load at max angles).
 # Load intensity follows a max-min-max sinusoidal form, where minimum intensity of loading
@@ -92,7 +91,7 @@ set Load reduction value = -1
 set Number of cycles = 1
 
 # Number of time steps at the end of the simulation without load.
-set Number of no-load time steps = 1
+set Number of no-load time steps = 2
 
 end
 
@@ -170,7 +169,7 @@ set growth incr          = 0.01
 # ===== Pressure-driven or joint growth only =====
 
 # Mechanical growth rate [1/s]
-set growth rate mech = 1.0e-5
+set growth rate mech = 5.0e-4
 
 # Nature of the dependency of growth on the mechanical stimuli (linear, quadratic, etc.)
 set growth exponential mech = 1.0
@@ -178,7 +177,7 @@ set growth exponential mech = 1.0
 # ===== Joint growth only =====
 
 # Biological growth rate [1/s]
-set growth rate bio = 2.0e-5
+set growth rate bio = 0.0
 
 # Polynomial coefficient order 0
 set growth bio coeff 0 = 1
@@ -209,7 +208,7 @@ set kappa                            = 1
 
 # Initial intrinsic permeability parameter of the solid (isotropic permeability) [um²]
 # To be used with Markert formulation of deformation-dependent intrinsic permeability
-set initial intrinsic permeability   = 1.0e-3
+set initial intrinsic permeability   = 1.12
 
 
 # Effective shear viscosity parameter of the fluid [kPa·s = 1e-9·N·s/um³]
@@ -251,7 +250,7 @@ subsection Nonlinear solver
 set Max iterations Newton-Raphson = 25
 
 # Force residual tolerance
-set Tolerance force               = 2.5e-6
+set Tolerance force               = 2.0e-6
 
 # Displacement error tolerance
 set Tolerance displacement        = 1.0e-7
@@ -264,10 +263,10 @@ end
 
 subsection Time
 # End time [s]
-set End time            = 1.01
+set End time            = 1.1
 
 # Time step size [s]
-set Time step size      = 0.01
+set Time step size      = 0.05
 end
 
 

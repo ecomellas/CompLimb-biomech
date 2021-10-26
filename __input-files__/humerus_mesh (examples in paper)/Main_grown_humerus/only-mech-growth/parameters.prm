@@ -178,7 +178,7 @@ set growth exponential mech = 1.0
 # ===== Joint growth only =====
 
 # Biological growth rate [1/s]
-set growth rate bio = 2.0e-5
+set growth rate bio = 0.0
 
 # Polynomial coefficient order 0
 set growth bio coeff 0 = 1
